@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Không Gian Tối — Our Galaxy</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000000; overflow: hidden; }
+    #bh-canvas { display: block; }
+  </style>
+</head>
+<body>
+
+  <!-- Black overlay — fades out on load to create "emerged from warp" feel -->
+  <div id="emerge-overlay"
+       style="position:fixed;inset:0;z-index:999;background:#000;
+              transition:opacity 1.5s ease-out;pointer-events:none;"></div>
+
+  <!-- Full-screen Three.js canvas — must receive all pointer/touch events -->
+  <canvas id="bh-canvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:0;"></canvas>
+
+  <!-- Back button — sits above canvas -->
+  <a href="../index.html"
+     style="position:fixed;bottom:1.5rem;left:1.5rem;z-index:10;pointer-events:auto;
+            padding:0.5rem 1.2rem;border:1px solid rgba(180,0,0,0.55);
+            color:rgba(255,80,80,0.85);border-radius:9999px;font-size:0.82rem;
+            letter-spacing:0.1em;text-decoration:none;
+            background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);
+            transition:background 0.2s;">
+    ← Thoát khỏi hố đen
+  </a>
+
+  <!-- Lightbox overlay -->
+  <div id="bh-lightbox"
+       style="display:none;position:fixed;inset:0;z-index:900;
+              background:rgba(0,0,0,0.92);
+              align-items:center;justify-content:center;cursor:pointer;">
+    <button id="bh-lb-close"
+            style="position:absolute;top:1rem;right:1.25rem;
+                   background:none;border:none;color:#fff;font-size:2rem;
+                   cursor:pointer;line-height:1;z-index:901;">×</button>
+    <img id="bh-lb-img" src=""
+         style="max-width:90vw;max-height:90vh;object-fit:contain;
+                border-radius:0.5rem;pointer-events:none;" alt="" />
+  </div>
+
+  <!-- Nav hint bar -->
+  <div style="position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:10;
+              pointer-events:none;text-align:center;">
+    <p style="font-size:0.72rem;color:rgba(200,100,100,0.55);letter-spacing:0.12em;
+              text-shadow:0 0 8px rgba(180,0,0,0.4);">
+      Cuộn để khám phá · Kéo để xoay · WASD di chuyển
+    </p>
+  </div>
+
+  <script>
+    // ─── Config — single source of truth ───────────────────────────────────
+    var BH = {
+      ORBIT_RADIUS:       18,
+      ORBIT_RADIUS_MIN:   0.5,
+      ORBIT_RADIUS_MAX:   30,
+      ORBIT_PHI_START:    Math.PI / 3,
+      DRAG_SPEED:         0.005,
+      ZOOM_STEP:          0.08,
+      ZOOM_DAMPING:       0.1,
+      PAN_SPEED_BASE:     0.04,
+      DRAG_THRESHOLD_PX:  5
+    };
+
+    var CARD = {
+      width:             0.032,   // 10x smaller — tiny until zoomed in very close
+      height:            0.042,
+      spinSpeedBase:     0.4,
+      spinSpeedVariance: 0.3,
+      bobSpeedBase:      0.6,
+      bobSpeedVariance:  0.4,
+      bobAmplitude:      0.12
+    };
+
+    var CLUSTER = {
+      radius:  1.2,    // compact — cards inside galaxy core area
+      ySpread: 0.15    // very flat within galaxy disc plane
+    };
+
+    // To add more photos: drop .webp files into the blackhole/ folder, then add an entry here.
+    // Note: spaces in filenames are encoded as %20 for reliable cross-platform loading.
+    var PHOTOS = [
+      { src: './IMG_20260521225624473.webp', title: '' },
+      { src: './IMG_20260521230640532.webp', title: '' },
+      { src: './IMG_20260521232741911.webp', title: '' },
+      { src: './IMG_20260521233146088.webp', title: '' },
+      { src: './IMG_20260521233623191.webp', title: '' },
+      { src: './IMG_20260521233813658.webp', title: '' },
+      { src: './IMG_20260521235418179.webp', title: '' },
+      { src: './IMG_20260521235441418.webp', title: '' },
+      { src: './IMG_20260521235853316.webp', title: '' },
+      { src: './KAG_0543.webp', title: '' },
+      { src: './KAG_0567.webp', title: '' },
+      { src: './KAG_0582.webp', title: '' },
+      { src: './KAG_0676.webp', title: '' },
+      { src: './KAG_0826.webp', title: '' },
+      { src: './KAG_0951.webp', title: '' },
+      { src: './KAG_1333.webp', title: '' },
+      { src: './KAG_1414.webp', title: '' },
+      { src: './KAG_1415.webp', title: '' },
+      { src: './KAG_1418.webp', title: '' },
+      { src: './KAG_1421.webp', title: '' },
+      { src: './KAG_1422.webp', title: '' },
+      { src: './KAG_1427.webp', title: '' },
+      { src: './KAG_1432.webp', title: '' },
+      { src: './KAG_1565.webp', title: '' },
+      { src: './KAG_2197.webp', title: '' },
+      { src: './KAG_2706.webp', title: '' },
+      { src: './KAG_2716.webp', title: '' },
+      { src: './KAG_2843.webp', title: '' },
+      { src: './KAG_2913.webp', title: '' },
+      { src: './KAG_3143.webp', title: '' },
+      { src: './KAG_3270.webp', title: '' },
+      { src: './KAG_3290.webp', title: '' },
+      { src: './KAG_3291.webp', title: '' },
+    ];
+    /* OLD TODO paths — kept for reference:
+      { src: '../our_stories/example_1/pictures/photo1.webp',        title: 'Khoảnh khắc 1' },
+      { src: '../our_stories/example_1/pictures/photo2.webp',        title: 'Khoảnh khắc 2' },
+      { src: '../our_stories/example_1/pictures/photo3.webp',        title: 'Khoảnh khắc 3' },
+      { src: '../our_stories/example_1 copy/pictures/photo1.webp',   title: 'Khoảnh khắc 4' },
+      { src: '../our_stories/example_1 copy/pictures/photo2.webp',   title: 'Khoảnh khắc 5' },
+      { src: '../our_stories/example_1 copy/pictures/photo3.webp',   title: 'Khoảnh khắc 6' },
+    */
+
+    // ─── Three.js scene, camera, renderer, clock ───────────────────────────
+    var canvas   = document.getElementById('bh-canvas');
+    var scene    = new THREE.Scene();
+    var camera   = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.01, 200);
+    var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    renderer.setClearColor(0x000000, 1);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    var clock = new THREE.Clock();
+
+    // ─── 8000 reddish background stars ─────────────────────────────────────
+    (function () {
+      var bgCount  = 8000;
+      var bgGeo    = new THREE.BufferGeometry();
+      var bgPos    = new Float32Array(bgCount * 3);
+      var bgColors = new Float32Array(bgCount * 3);
+      for (var bi = 0; bi < bgCount; bi++) {
+        var bgTheta = Math.random() * Math.PI * 2;
+        var bgPhi   = Math.acos(2 * Math.random() - 1);
+        var bgR     = 60 + Math.random() * 80;
+        bgPos[bi * 3]     = bgR * Math.sin(bgPhi) * Math.cos(bgTheta);
+        bgPos[bi * 3 + 1] = bgR * Math.cos(bgPhi);
+        bgPos[bi * 3 + 2] = bgR * Math.sin(bgPhi) * Math.sin(bgTheta);
+        var t = Math.random();
+        bgColors[bi * 3]     = 0.7 + t * 0.3;    // R: 0.70–1.00
+        bgColors[bi * 3 + 1] = 0.1 + t * 0.25;   // G: 0.10–0.35
+        bgColors[bi * 3 + 2] = 0.05 + t * 0.10;  // B: 0.05–0.15
+      }
+      bgGeo.setAttribute('position', new THREE.BufferAttribute(bgPos,    3));
+      bgGeo.setAttribute('color',    new THREE.BufferAttribute(bgColors, 3));
+      var bgMat = new THREE.PointsMaterial({
+        size:         0.15,
+        vertexColors: true,
+        transparent:  true,
+        opacity:      0.75,
+        depthWrite:   false
+      });
+      scene.add(new THREE.Points(bgGeo, bgMat));
+    })();
+
+    // ─── BH Galaxy particle system (dark red/crimson — the "alien galaxy") ──
+    var bhColorCore    = new THREE.Color('#fff0e0');  // warm white core
+    var bhColorBulge   = new THREE.Color('#ff8844');  // orange bulge
+    var bhColorInner   = new THREE.Color('#cc3300');  // deep red inner disk
+    var bhColorMid     = new THREE.Color('#880000');  // dark crimson mid
+    var bhColorOuter   = new THREE.Color('#220000');  // near-black outer
+    var bhColorAccent1 = new THREE.Color('#ff4400');  // bright orange accent (5%)
+    var bhColorAccent2 = new THREE.Color('#661100');  // dark red accent (5%)
+
+    var bhParticleCount = window.innerWidth < 768 ? 25000 : 60000;
+    var bhGalaxyRadius  = 4;
+    var bhGalaxyArms    = 2;   // 2 arms — more ominous than 3
+    var bhGalaxySpin    = 1.8; // tighter spiral
+
+    var bhStarCanvas = document.createElement('canvas');
+    bhStarCanvas.width = 64; bhStarCanvas.height = 64;
+    var bhStarCtx  = bhStarCanvas.getContext('2d');
+    var bhStarGrad = bhStarCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    bhStarGrad.addColorStop(0,    'rgba(255,255,255,1)');
+    bhStarGrad.addColorStop(0.2,  'rgba(255,255,255,0.85)');
+    bhStarGrad.addColorStop(0.55, 'rgba(255,255,255,0.2)');
+    bhStarGrad.addColorStop(1,    'rgba(255,255,255,0)');
+    bhStarCtx.fillStyle = bhStarGrad;
+    bhStarCtx.fillRect(0, 0, 64, 64);
+    var bhStarTexture = new THREE.CanvasTexture(bhStarCanvas);
+
+    var bhGalaxyGeo  = new THREE.BufferGeometry();
+    var bhPositions  = new Float32Array(bhParticleCount * 3);
+    var bhColorsArr  = new Float32Array(bhParticleCount * 3);
+
+    for (var bhi = 0; bhi < bhParticleCount; bhi++) {
+      var bhIdx  = bhi * 3;
+      var bhPx, bhPy, bhPz, bhR;
+      var bhComp = Math.random();
+
+      if (bhComp < 0.18) {
+        // ── Central bulge (18%) — spheroidal, slightly flattened ──────────
+        var bhBPhi   = Math.acos(2 * Math.random() - 1);
+        var bhBTheta = Math.random() * Math.PI * 2;
+        bhR  = Math.pow(Math.random(), 1.8) * 0.85;
+        bhPx = bhR * Math.sin(bhBPhi) * Math.cos(bhBTheta);
+        bhPy = bhR * Math.cos(bhBPhi) * 0.5;
+        bhPz = bhR * Math.sin(bhBPhi) * Math.sin(bhBTheta);
+      } else {
+        // ── Disk + spiral arms (82%) ──────────────────────────────────────
+        bhR = Math.pow(Math.random(), 1.2) * bhGalaxyRadius;
+        var bhArm       = (bhi % bhGalaxyArms) / bhGalaxyArms * Math.PI * 2;
+        var bhSpinAngle = bhR * bhGalaxySpin;
+
+        var bhArmAngle;
+        if (Math.random() < 0.25) {
+          bhArmAngle = Math.random() * Math.PI * 2;
+        } else {
+          var bhArmScatter = (Math.random() - 0.5) * (0.45 + bhR * 0.14);
+          bhArmAngle = bhArm + bhSpinAngle + bhArmScatter;
+        }
+
+        bhPx = Math.cos(bhArmAngle) * bhR;
+        bhPz = Math.sin(bhArmAngle) * bhR;
+
+        // Exponential scale height — thick centre, thin outer edge
+        var bhHScale = 0.26 * Math.exp(-bhR / (bhGalaxyRadius * 1.0)) + 0.045;
+        // Laplace distribution ≈ sech² disk profile
+        var bhU = Math.random();
+        if (bhU < 0.5) {
+          bhPy = Math.log(Math.max(2 * bhU, 1e-10)) * bhHScale;
+        } else {
+          bhPy = -Math.log(Math.max(2 * (1 - bhU), 1e-10)) * bhHScale;
+        }
+        bhPy = Math.max(-bhHScale * 2.8, Math.min(bhHScale * 2.8, bhPy));
+      }
+
+      bhPositions[bhIdx]     = bhPx;
+      bhPositions[bhIdx + 1] = bhPy;
+      bhPositions[bhIdx + 2] = bhPz;
+
+      // Per-star colour
+      var bhT = bhComp < 0.18 ? bhR / 0.85 : bhR / bhGalaxyRadius;
+      var bhMixed = new THREE.Color();
+      if (bhComp < 0.18) {
+        bhMixed.lerpColors(bhColorCore, bhColorBulge, bhT);
+      } else if (bhT < 0.4) {
+        bhMixed.lerpColors(bhColorInner, bhColorMid, bhT / 0.4);
+      } else {
+        bhMixed.lerpColors(bhColorMid, bhColorOuter, (bhT - 0.4) / 0.6);
+      }
+      if (bhComp >= 0.18 && Math.random() < 0.05) {
+        bhMixed.copy(Math.random() < 0.5 ? bhColorAccent1 : bhColorAccent2);
+      }
+
+      bhColorsArr[bhIdx]     = bhMixed.r;
+      bhColorsArr[bhIdx + 1] = bhMixed.g;
+      bhColorsArr[bhIdx + 2] = bhMixed.b;
+    }
+
+    bhGalaxyGeo.setAttribute('position', new THREE.BufferAttribute(bhPositions, 3));
+    bhGalaxyGeo.setAttribute('color',    new THREE.BufferAttribute(bhColorsArr, 3));
+
+    var bhGalaxyMat = new THREE.PointsMaterial({
+      size:         0.04,
+      map:          bhStarTexture,
+      blending:     THREE.AdditiveBlending,
+      vertexColors: true,
+      depthWrite:   false,
+      transparent:  true,
+      alphaTest:    0.001
+    });
+
+    var bhGalaxy = new THREE.Points(bhGalaxyGeo, bhGalaxyMat);
+    scene.add(bhGalaxy);
+
+    // ─── Accretion disk removed — galaxy particle system replaces it ────────
+
+    // ─── Golden-angle spiral position function ─────────────────────────────
+    var GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));  // ≈ 2.399 rad / 137.5°
+
+    function getClusterPosition(index, total) {
+      var r     = CLUSTER.radius * Math.sqrt((index + 0.5) / total);
+      var theta = index * GOLDEN_ANGLE;
+      var yFrac = Math.sin(index * 127.1 + 311.7);   // deterministic, -1..1
+      return new THREE.Vector3(
+        Math.cos(theta) * r,
+        yFrac * CLUSTER.ySpread,
+        Math.sin(theta) * r
+      );
+    }
+
+    // ─── Card factory — PlaneGeometry with DoubleSide ───────────────────────
+    // Back face naturally mirrors U coords in Three.js → "flipped card" look.
+    function createCard(photo, position, index) {
+      var geometry       = new THREE.PlaneGeometry(CARD.width, CARD.height);
+      var placeholderMat = new THREE.MeshBasicMaterial({
+        color: 0x331111, side: THREE.DoubleSide, transparent: true, opacity: 0.85
+      });
+      var mesh = new THREE.Mesh(geometry, placeholderMat);
+      mesh.position.copy(position);
+      // Deterministic varied initial rotation so cards don't all face the same way
+      mesh.rotation.y = (Math.sin(index * 347.7 + 2.1) * 0.5 + 0.5) * Math.PI * 2;
+
+      mesh.userData = {
+        photoSrc:    photo.src,
+        title:       photo.title || '',
+        spinSpeed:   CARD.spinSpeedBase + Math.abs(Math.sin(index * 0.7)) * CARD.spinSpeedVariance,
+        bobSpeed:    CARD.bobSpeedBase  + Math.abs(Math.sin(index * 1.3)) * CARD.bobSpeedVariance,
+        bobAmp:      CARD.bobAmplitude,
+        baseY:       position.y,
+        phaseOffset: index * 1.7
+      };
+
+      var loader = new THREE.TextureLoader();
+      loader.load(
+        photo.src,
+        function (texture) {
+          mesh.material = new THREE.MeshBasicMaterial({
+            map: texture, side: THREE.DoubleSide, transparent: true
+          });
+        },
+        undefined,
+        function () { /* keep placeholder material on error */ }
+      );
+      return mesh;
+    }
+
+    // ─── Build card scene objects ───────────────────────────────────────────
+    var cardMeshes = [];
+    for (var ci = 0; ci < PHOTOS.length; ci++) {
+      var pos  = getClusterPosition(ci, PHOTOS.length);
+      var card = createCard(PHOTOS[ci], pos, ci);
+      scene.add(card);
+      cardMeshes.push(card);
+    }
+
+    // ─── Orbital camera (spherical coordinates) ─────────────────────────────
+    var orbitRadius     = BH.ORBIT_RADIUS;
+    var targetRadius    = BH.ORBIT_RADIUS;
+    var RADIUS_MIN      = BH.ORBIT_RADIUS_MIN;
+    var RADIUS_MAX      = BH.ORBIT_RADIUS_MAX;
+    var sphericalCoords = { theta: 0, phi: BH.ORBIT_PHI_START };
+    var lookAtTarget    = new THREE.Vector3(0, 0, 0);
+
+    function updateCamera() {
+      camera.position.x = orbitRadius * Math.sin(sphericalCoords.phi) * Math.sin(sphericalCoords.theta) + lookAtTarget.x;
+      camera.position.y = orbitRadius * Math.cos(sphericalCoords.phi)                                   + lookAtTarget.y;
+      camera.position.z = orbitRadius * Math.sin(sphericalCoords.phi) * Math.cos(sphericalCoords.theta) + lookAtTarget.z;
+      camera.lookAt(lookAtTarget);
+    }
+    updateCamera();
+
+    // ─── Mouse drag controls — left orbit, right/middle pan ────────────────
+    var isDragging = false;
+    var isPanning  = false;
+    var mouseDownX = 0, mouseDownY = 0;
+    var lastMouseX = 0, lastMouseY = 0;
+
+    canvas.addEventListener('mousedown', function (e) {
+      isDragging = true;
+      isPanning  = (e.button === 2 || e.button === 1);
+      mouseDownX = lastMouseX = e.clientX;
+      mouseDownY = lastMouseY = e.clientY;
+    });
+
+    canvas.addEventListener('mousemove', function (e) {
+      if (!isDragging) { checkHover(e.clientX, e.clientY); return; }
+      var dx = e.clientX - lastMouseX;
+      var dy = e.clientY - lastMouseY;
+      if (isPanning) {
+        var panScale = orbitRadius * BH.PAN_SPEED_BASE * 0.012;
+        var fwd = new THREE.Vector3();
+        camera.getWorldDirection(fwd);
+        var rightVec = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+        lookAtTarget.addScaledVector(rightVec, -dx * panScale);
+        lookAtTarget.y += dy * panScale;
+      } else {
+        sphericalCoords.theta -= dx * BH.DRAG_SPEED;
+        sphericalCoords.phi   -= dy * BH.DRAG_SPEED;
+        sphericalCoords.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, sphericalCoords.phi));
+      }
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      updateCamera();
+    });
+
+    canvas.addEventListener('mouseup', function (e) {
+      var moved = Math.sqrt(
+        Math.pow(e.clientX - mouseDownX, 2) + Math.pow(e.clientY - mouseDownY, 2)
+      );
+      isDragging = false;
+      isPanning  = false;
+      if (moved < BH.DRAG_THRESHOLD_PX) { handleCardClick(e.clientX, e.clientY); }
+    });
+
+    canvas.addEventListener('mouseleave', function () { isDragging = false; isPanning = false; });
+    canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+    // ─── Touch controls — 1-finger rotate, 2-finger pinch/pan ─────────────
+    var isTouching        = false;
+    var touchStartX       = 0, touchStartY       = 0;
+    var lastTouchX        = 0, lastTouchY        = 0;
+    var isPinching        = false;
+    var lastPinchDist     = 0;
+    var lastTwoFingerMidX = 0, lastTwoFingerMidY = 0;
+    var twoFingerPanActive = false;
+
+    canvas.addEventListener('touchstart', function (e) {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        isTouching  = true;
+        isPinching  = false;
+        touchStartX = lastTouchX = e.touches[0].clientX;
+        touchStartY = lastTouchY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        isTouching = false;
+        isPinching = true;
+        var dx = e.touches[0].clientX - e.touches[1].clientX;
+        var dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastPinchDist = Math.sqrt(dx * dx + dy * dy);
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', function (e) {
+      e.preventDefault();
+      if (e.touches.length === 1 && isTouching && !isPinching) {
+        var dx = e.touches[0].clientX - lastTouchX;
+        var dy = e.touches[0].clientY - lastTouchY;
+        sphericalCoords.theta -= dx * BH.DRAG_SPEED;
+        sphericalCoords.phi   -= dy * BH.DRAG_SPEED;
+        sphericalCoords.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, sphericalCoords.phi));
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        updateCamera();
+      } else if (e.touches.length === 2) {
+        var dx   = e.touches[0].clientX - e.touches[1].clientX;
+        var dy   = e.touches[0].clientY - e.touches[1].clientY;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        var midX = (e.touches[0].clientX + e.touches[1].clientX) * 0.5;
+        var midY = (e.touches[0].clientY + e.touches[1].clientY) * 0.5;
+        if (lastPinchDist > 0) {
+          var pinchDelta = Math.abs(dist - lastPinchDist);
+          if (pinchDelta < 8) {
+            if (twoFingerPanActive) {
+              var panScale = orbitRadius * BH.PAN_SPEED_BASE * 0.015;
+              var fwd2 = new THREE.Vector3();
+              camera.getWorldDirection(fwd2);
+              var rv2 = new THREE.Vector3().crossVectors(fwd2, camera.up).normalize();
+              lookAtTarget.addScaledVector(rv2, -(midX - lastTwoFingerMidX) * panScale);
+              lookAtTarget.y += (midY - lastTwoFingerMidY) * panScale;
+              updateCamera();
+            }
+            twoFingerPanActive = true;
+          } else {
+            twoFingerPanActive = false;
+            targetRadius *= lastPinchDist / dist;
+            targetRadius  = Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, targetRadius));
+          }
+        }
+        lastPinchDist     = dist;
+        lastTwoFingerMidX = midX;
+        lastTwoFingerMidY = midY;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', function (e) {
+      e.preventDefault();
+      if (e.touches.length === 0) {
+        var dx = lastTouchX - touchStartX;
+        var dy = lastTouchY - touchStartY;
+        if (isTouching && !isPinching && Math.sqrt(dx * dx + dy * dy) < BH.DRAG_THRESHOLD_PX) {
+          handleCardClick(touchStartX, touchStartY);
+        }
+        isTouching         = false;
+        isPinching         = false;
+        lastPinchDist      = 0;
+        twoFingerPanActive = false;
+        lastTwoFingerMidX  = 0;
+        lastTwoFingerMidY  = 0;
+      } else if (e.touches.length === 1 && isPinching) {
+        isPinching         = false;
+        lastPinchDist      = 0;
+        twoFingerPanActive = false;
+        lastTwoFingerMidX  = 0;
+        lastTwoFingerMidY  = 0;
+        isTouching         = true;
+        touchStartX = lastTouchX = e.touches[0].clientX;
+        touchStartY = lastTouchY = e.touches[0].clientY;
+      }
+    }, { passive: false });
+
+    // ─── Keyboard pan (WASD / arrows / Q-E) ────────────────────────────────
+    var keysDown = {};
+    document.addEventListener('keydown', function (e) { keysDown[e.key] = true; });
+    document.addEventListener('keyup',   function (e) { keysDown[e.key] = false; });
+
+    function applyKeyboardPan() {
+      var any = keysDown['a'] || keysDown['A'] || keysDown['ArrowLeft']  ||
+                keysDown['d'] || keysDown['D'] || keysDown['ArrowRight'] ||
+                keysDown['w'] || keysDown['W'] || keysDown['ArrowUp']    ||
+                keysDown['s'] || keysDown['S'] || keysDown['ArrowDown']  ||
+                keysDown['q'] || keysDown['Q'] ||
+                keysDown['e'] || keysDown['E'];
+      if (!any) return;
+      var panStep = orbitRadius * BH.PAN_SPEED_BASE * 0.5;
+      var fwdK   = new THREE.Vector3();
+      camera.getWorldDirection(fwdK);
+      var rightK = new THREE.Vector3().crossVectors(fwdK, camera.up).normalize();
+      var hFwd   = new THREE.Vector3(fwdK.x, 0, fwdK.z);
+      if (hFwd.lengthSq() > 0.0001) { hFwd.normalize(); }
+      if (keysDown['a'] || keysDown['A'] || keysDown['ArrowLeft'])  { lookAtTarget.addScaledVector(rightK, -panStep); }
+      if (keysDown['d'] || keysDown['D'] || keysDown['ArrowRight']) { lookAtTarget.addScaledVector(rightK,  panStep); }
+      if (keysDown['w'] || keysDown['W'] || keysDown['ArrowUp'])    { lookAtTarget.addScaledVector(hFwd,    panStep); }
+      if (keysDown['s'] || keysDown['S'] || keysDown['ArrowDown'])  { lookAtTarget.addScaledVector(hFwd,   -panStep); }
+      if (keysDown['q'] || keysDown['Q'])                           { lookAtTarget.y += panStep; }
+      if (keysDown['e'] || keysDown['E'])                           { lookAtTarget.y -= panStep; }
+      updateCamera();
+    }
+
+    // ─── Scroll-wheel zoom ─────────────────────────────────────────────────
+    canvas.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      var direction = e.deltaY > 0 ? 1 : -1;
+      targetRadius += direction * targetRadius * BH.ZOOM_STEP;
+      targetRadius  = Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, targetRadius));
+    }, { passive: false });
+
+    // ─── Raycasting helpers ─────────────────────────────────────────────────
+    var raycaster = new THREE.Raycaster();
+    var mouse2D   = new THREE.Vector2();
+
+    function setNDC(clientX, clientY) {
+      mouse2D.x =  (clientX / window.innerWidth)  * 2 - 1;
+      mouse2D.y = -(clientY / window.innerHeight) * 2 + 1;
+    }
+
+    function handleCardClick(clientX, clientY) {
+      setNDC(clientX, clientY);
+      raycaster.setFromCamera(mouse2D, camera);
+      var hits = raycaster.intersectObjects(cardMeshes);
+      if (hits.length > 0) {
+        openLightbox(hits[0].object.userData.photoSrc);
+      }
+    }
+
+    function checkHover(clientX, clientY) {
+      setNDC(clientX, clientY);
+      raycaster.setFromCamera(mouse2D, camera);
+      var hits = raycaster.intersectObjects(cardMeshes);
+      canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+    }
+
+    // ─── Lightbox ──────────────────────────────────────────────────────────
+    var lightbox    = document.getElementById('bh-lightbox');
+    var lightboxImg = document.getElementById('bh-lb-img');
+
+    function openLightbox(src) {
+      if (!src) return;
+      lightboxImg.src        = src;
+      lightbox.style.display = 'flex';
+    }
+
+    function closeLightbox() {
+      lightbox.style.display = 'none';
+      lightboxImg.src = '';
+    }
+
+    lightbox.addEventListener('click', function (e) {
+      if (e.target === lightbox || e.target.id === 'bh-lb-close') { closeLightbox(); }
+    });
+
+    // Escape closes the lightbox
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { closeLightbox(); }
+    });
+
+    // ─── Animation loop ─────────────────────────────────────────────────────
+    // clock.getElapsedTime() is called exactly once per frame.
+    var prevElapsed = 0;
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      var elapsed = clock.getElapsedTime();  // single call per frame
+      var dt      = elapsed - prevElapsed;
+      prevElapsed = elapsed;
+
+      applyKeyboardPan();
+
+      // Smooth zoom lerp
+      if (Math.abs(orbitRadius - targetRadius) > 0.001) {
+        orbitRadius += (targetRadius - orbitRadius) * BH.ZOOM_DAMPING;
+        updateCamera();
+      }
+
+      // BH galaxy slow auto-rotation
+      bhGalaxy.rotation.y = elapsed * 0.025;
+
+      // Card spin (dt-incremental) + bob (sin of elapsed for smooth continuity)
+      for (var ci = 0; ci < cardMeshes.length; ci++) {
+        var c  = cardMeshes[ci];
+        var ud = c.userData;
+        c.rotation.y += dt * ud.spinSpeed;
+        c.position.y  = ud.baseY +
+          Math.sin(elapsed * ud.bobSpeed + ud.phaseOffset) * ud.bobAmp;
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ─── Emerge overlay fade ───────────────────────────────────────────────
+    window.addEventListener('load', function () {
+      var el = document.getElementById('emerge-overlay');
+      if (!el) return;
+      setTimeout(function () {
+        el.style.opacity = '0';
+        setTimeout(function () { el.style.display = 'none'; }, 1600);
+      }, 200);
+    });
+
+    // ─── Resize handler ────────────────────────────────────────────────────
+    window.addEventListener('resize', function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+  </script>
+
+  <!-- Meteor shower — available for manual trigger; no auto-trigger on this page -->
+  <script src="../shared/meteor-shower.js"></script>
+</body>
+</html>

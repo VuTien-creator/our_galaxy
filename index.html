@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Our Galaxy — Vũ Trụ Của Chúng Mình</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #000008; }
+    #galaxy-canvas { display: block; }
+
+    /* HTML label rendered over the 3D star */
+    .star-label {
+      position: absolute;
+      pointer-events: none;
+      font-size: 12px;
+      font-weight: 300;
+      letter-spacing: 0.1em;
+      white-space: nowrap;
+      transform: translate(-50%, -150%);
+      transition: opacity 0.3s;
+      user-select: none;
+    }
+
+    @keyframes introFloat {
+      0%   { opacity: 0; transform: translateY(16px); }
+      18%  { opacity: 1; transform: translateY(0); }
+      82%  { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(-10px); }
+    }
+    @keyframes introHint {
+      0%, 100% { opacity: 0.4; }
+      50%       { opacity: 1; }
+    }
+    #intro-overlay {
+      position: fixed; inset: 0; z-index: 500;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: rgba(0,0,2,0.88);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      cursor: pointer;
+      transition: opacity 0.5s;
+    }
+    #intro-overlay.hidden { display: none !important; }
+    .intro-content {
+      text-align: center; padding: 0 2rem; max-width: 36rem;
+      animation: introFloat 6s ease forwards;
+      pointer-events: none;
+    }
+    .intro-hint {
+      margin-top: 2rem; font-size: 0.75rem; letter-spacing: 0.15em;
+      color: rgba(200,180,255,0.7);
+      animation: introHint 2s ease 1s infinite;
+      pointer-events: none;
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- Galaxy intro overlay — shown on first visit, tap/click or wait 6s to dismiss -->
+  <div id="intro-overlay">
+    <div class="intro-content">
+      <div style="font-size:3rem; margin-bottom:1rem;">✨</div>
+      <h2 style="font-size:1.6rem; font-weight:300; letter-spacing:0.12em; color:#e8d5ff;
+                 text-shadow:0 0 30px #a855f7,0 0 60px #7c3aed; margin-bottom:1rem;">
+        Vũ Trụ Của Chúng Mình
+      </h2>
+      <p style="font-size:0.95rem; font-weight:300; line-height:1.85; color:rgba(200,180,255,0.85);">
+        Đây là nơi tụi mình lưu trữ lại những kỷ niệm,<br>
+        mọi người có thể khám phá các ngôi sao<br>
+        để biết những câu chuyện của tụi mình 💫
+      </p>
+    </div>
+    <p class="intro-hint">Chạm hoặc nhấp để bắt đầu</p>
+  </div>
+
+  <!-- Full-screen Three.js canvas -->
+  <canvas id="galaxy-canvas" class="absolute inset-0 w-full h-full"></canvas>
+
+  <!-- UI overlay — pointer-events-none so drags pass through to the canvas -->
+  <div class="absolute inset-0 pointer-events-none flex flex-col">
+    <div class="flex-1 flex flex-col items-center justify-start pt-8 md:pt-12">
+      <h1 class="text-3xl md:text-5xl font-thin tracking-widest"
+          style="color:#e8d5ff;text-shadow:0 0 30px #a855f7,0 0 60px #7c3aed;">
+        Our Galaxy
+      </h1>
+      <p class="mt-2 text-sm md:text-base font-light tracking-widest text-purple-300 opacity-80">
+        Vũ Trụ Của Chúng Mình ✨
+      </p>
+    </div>
+    <div class="pb-6 md:pb-8 flex justify-center">
+      <p class="text-xs md:text-sm text-gray-400 opacity-60 tracking-wider text-center px-4">
+        Kéo: xoay · Cuộn/chụm: thu phóng · Chuột phải/WASD: di chuyển
+      </p>
+    </div>
+  </div>
+
+  <!-- Container for HTML labels projected from 3D story star positions -->
+  <div id="star-labels" class="absolute inset-0 pointer-events-none"></div>
+
+  <!-- Secret Galaxy discovery modal -->
+  <div id="secret-discovery"
+       style="display:none; position:fixed; inset:0; z-index:700;
+              background:rgba(0,0,8,0.90); backdrop-filter:blur(10px);
+              -webkit-backdrop-filter:blur(10px);
+              align-items:center; justify-content:center;
+              opacity:0; transition:opacity 0.5s;">
+    <div style="text-align:center; padding:2rem 2.5rem; max-width:28rem;
+                border:1px solid rgba(168,85,247,0.35); border-radius:1.5rem;
+                background:rgba(10,4,30,0.85);">
+      <div style="font-size:2.5rem; margin-bottom:1rem;">🔭</div>
+      <h2 style="font-size:1.4rem; font-weight:300; letter-spacing:0.1em;
+                 color:#e8d5ff; margin-bottom:0.75rem;">Bạn phát hiện rồi!</h2>
+      <p style="font-size:0.9rem; color:rgba(200,180,255,0.8); line-height:1.7; margin-bottom:1.5rem;">
+        Đây là nơi bí mật của tụi mình — nhưng mà mất công tìm kiếm rồi
+        thì cùng xem những câu chuyện bí mật nha 🌌
+      </p>
+      <a id="secret-link" href="#"
+         style="display:inline-block; padding:0.65rem 1.5rem;
+                background:linear-gradient(135deg,#7c3aed,#db2777);
+                color:#fff; border-radius:2rem; font-size:0.9rem;
+                text-decoration:none; letter-spacing:0.05em; margin-bottom:0.75rem;">
+        Khám phá bí mật
+      </a>
+      <br>
+      <button id="secret-close"
+              style="background:none; border:none; color:rgba(200,180,255,0.55);
+                     font-size:0.82rem; cursor:pointer; margin-top:0.5rem;
+                     letter-spacing:0.08em;">
+        Lần sau
+      </button>
+    </div>
+  </div>
+
+  <!-- Warp-speed canvas — used by startWarpAnimation() on black-hole click -->
+  <canvas id="warp-canvas" style="display:none; position:fixed; inset:0; z-index:799; pointer-events:none;" width="1" height="1"></canvas>
+
+  <script>
+    // ─── Galaxy Config — single source of truth ──────────────────────────────
+    var GC = {
+      PARTICLES_DESKTOP:  80000,
+      PARTICLES_MOBILE:   30000,
+      BG_STARS_DESKTOP:   15000,
+      BG_STARS_MOBILE:    8000,
+      GALAXY_RADIUS:      4,
+      GALAXY_SPIN:        1.5,
+      GALAXY_ARMS:        3,
+      ORBIT_RADIUS:       6,
+      ORBIT_RADIUS_MIN:   1.5,
+      ORBIT_RADIUS_MAX:   18,
+      ORBIT_PHI_START:    Math.PI / 3,
+      STAR_ORBIT_RADIUS:  2.4,
+      STAR_ORBIT_SPREAD:  0.6,
+      STAR_HEIGHT_SPREAD: 0.5,
+      LABEL_SHOW_RADIUS:  9,     // labels only visible when camera is closer than this
+      DRAG_THRESHOLD_PX:  5,
+      DRAG_SPEED:         0.005,
+      ZOOM_STEP:          0.08,  // proportional: fraction of current radius per scroll tick
+      ZOOM_DAMPING:       0.1,
+      PAN_SPEED_BASE:     0.04,   // base pan distance per pixel (scales with orbitRadius)
+      PAN_SCALE:          true    // whether pan speed scales with zoom level
+    };
+
+    // Deterministic star placement: ring + seeded per-index nudge
+    function calcStarPosition(index, total) {
+      var angle  = (index / total) * Math.PI * 2;
+      var nudgeR = (Math.sin(index * 127.1 + 311.7) * 0.5 + 0.5);
+      var r      = GC.STAR_ORBIT_RADIUS + (nudgeR - 0.5) * GC.STAR_ORBIT_SPREAD;
+      var nudgeY = Math.sin(index * 269.5 + 183.3) * GC.STAR_HEIGHT_SPREAD * 0.5;
+      return { x: Math.cos(angle) * r, y: nudgeY, z: Math.sin(angle) * r };
+    }
+
+    // ─── Intro overlay — shows once per browser session ──────────────────────
+    (function () {
+      var overlay = document.getElementById('intro-overlay');
+      if (!overlay) return;
+      var shown = false;
+      try { shown = !!localStorage.getItem('og_intro_shown'); } catch (e) {}
+      if (shown) { overlay.classList.add('hidden'); return; }
+      try { localStorage.setItem('og_intro_shown', '1'); } catch (e) {}
+      var dismissed = false;
+      function dismiss() {
+        if (dismissed) return;
+        dismissed = true;
+        overlay.style.opacity = '0';
+        setTimeout(function () { overlay.classList.add('hidden'); }, 520);
+      }
+      overlay.addEventListener('click', dismiss);
+      overlay.addEventListener('touchend', function (e) { e.preventDefault(); dismiss(); });
+      setTimeout(dismiss, 6000);
+    })();
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STORIES CONFIG — each entry becomes a glowing star in the galaxy.
+    // Add more objects here following the same structure to add new stories.
+    // ═══════════════════════════════════════════════════════════════════════
+    var STORIES = [
+      { id: 'example_1', title: 'Những Ngày Đầu', subtitle: 'Khi chúng mình lần đầu gặp nhau...', path: './our_stories/example_1/index.html', icon: '☀️', starColor: '#ffdd88', glowColor: '#ff8800', size: 0.13, starType: 'sun' },
+      { id: 'example_1_copy', title: 'Kỷ Niệm Đôi Ta', subtitle: 'Những khoảnh khắc không thể quên...', path: './our_stories/example_1 copy/index.html', icon: '🪐', starColor: '#aab8ff', glowColor: '#4466ff', size: 0.14, starType: 'saturn' }
+    ];
+    STORIES.forEach(function(s, i) {
+      if (!s.position) { s.position = calcStarPosition(i, STORIES.length); }
+    });
+
+    // ─── Three.js scene setup ───────────────────────────────────────────────
+    var canvas   = document.getElementById('galaxy-canvas');
+    var scene    = new THREE.Scene();
+    var camera   = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+    var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    renderer.setClearColor(0x000008, 1);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    var clock = new THREE.Clock();
+
+    // ─── Galaxy particle system (3 spiral arms) ─────────────────────────────
+    var isMobile       = window.innerWidth < 768;
+    var particleCount  = isMobile ? GC.PARTICLES_MOBILE : GC.PARTICLES_DESKTOP;
+    var galaxyRadius   = GC.GALAXY_RADIUS;
+
+    // ─── Soft circular star sprite texture (avoids square-pixel look) ─────────
+    var _sc = document.createElement('canvas');
+    _sc.width = 64; _sc.height = 64;
+    var _sctx = _sc.getContext('2d');
+    var _sg   = _sctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    _sg.addColorStop(0,    'rgba(255,255,255,1)');
+    _sg.addColorStop(0.2,  'rgba(255,255,255,0.85)');
+    _sg.addColorStop(0.55, 'rgba(255,255,255,0.2)');
+    _sg.addColorStop(1,    'rgba(255,255,255,0)');
+    _sctx.fillStyle = _sg;
+    _sctx.fillRect(0, 0, 64, 64);
+    var starTexture = new THREE.CanvasTexture(_sc);
+
+    var galaxyGeo = new THREE.BufferGeometry();
+    var positions  = new Float32Array(particleCount * 3);
+    var colors     = new Float32Array(particleCount * 3);
+
+    var colorCore   = new THREE.Color('#fff8e8');   // hot white bulge core
+    var colorBulge  = new THREE.Color('#ffc880');   // warm orange bulge edge
+    var colorInner  = new THREE.Color('#ffe8d0');   // warm inner disk
+    var colorMid    = new THREE.Color('#6040ff');   // blue-purple mid disk
+    var colorOuter  = new THREE.Color('#1b3984');   // deep blue outer disk
+    var colorPink   = new THREE.Color('#ff4080');   // nebula accent
+    var colorViolet = new THREE.Color('#8020ff');   // nebula accent
+
+    for (var i = 0; i < particleCount; i++) {
+      var idx  = i * 3;
+      var px, py, pz, r;
+      var comp = Math.random();   // which galaxy component
+
+      if (comp < 0.18) {
+        // ── Central bulge (18 %) — spheroidal, slightly flattened ────────
+        var bPhi   = Math.acos(2 * Math.random() - 1);
+        var bTheta = Math.random() * Math.PI * 2;
+        r  = Math.pow(Math.random(), 1.8) * 0.85;
+        px = r * Math.sin(bPhi) * Math.cos(bTheta);
+        py = r * Math.cos(bPhi) * 0.5;            // flatten into oblate spheroid
+        pz = r * Math.sin(bPhi) * Math.sin(bTheta);
+
+      } else {
+        // ── Disk + spiral arms (82 %) ───────────────────────────────────
+        r = Math.pow(Math.random(), 1.2) * galaxyRadius;
+        var arm       = (i % GC.GALAXY_ARMS) / GC.GALAXY_ARMS * Math.PI * 2;
+        var spinAngle = r * GC.GALAXY_SPIN;
+
+        // 25 % interarm stars — prevents arms looking too mechanical
+        var armAngle;
+        if (Math.random() < 0.25) {
+          armAngle = Math.random() * Math.PI * 2;
+        } else {
+          // Arms get looser (wider scatter) at larger radii
+          var armScatter = (Math.random() - 0.5) * (0.45 + r * 0.14);
+          armAngle = arm + spinAngle + armScatter;
+        }
+
+        px = Math.cos(armAngle) * r;
+        pz = Math.sin(armAngle) * r;
+
+        // ── Galactic scale height — exponential vertical profile ─────────
+        // h(r) = h0·exp(-r/hr): thick centre, thin outer edge
+        var hScale = 0.26 * Math.exp(-r / (galaxyRadius * 1.0)) + 0.045;
+        // Laplace distribution (double-exponential) ≈ sech² disk profile
+        var u = Math.random();
+        if (u < 0.5) {
+          py = Math.log(Math.max(2 * u, 1e-10)) * hScale;
+        } else {
+          py = -Math.log(Math.max(2 * (1 - u), 1e-10)) * hScale;
+        }
+        py = Math.max(-hScale * 2.8, Math.min(hScale * 2.8, py));
+      }
+
+      positions[idx]     = px;
+      positions[idx + 1] = py;
+      positions[idx + 2] = pz;
+
+      // ── Per-star colour ─────────────────────────────────────────────────
+      var t = comp < 0.18 ? r / 0.85 : r / galaxyRadius;
+      var mixedColor = new THREE.Color();
+
+      if (comp < 0.18) {
+        mixedColor.lerpColors(colorCore, colorBulge, t);
+      } else if (t < 0.4) {
+        mixedColor.lerpColors(colorInner, colorMid, t / 0.4);
+      } else {
+        mixedColor.lerpColors(colorMid, colorOuter, (t - 0.4) / 0.6);
+      }
+      if (comp >= 0.18 && Math.random() < 0.05) {
+        mixedColor.copy(Math.random() < 0.5 ? colorPink : colorViolet);
+      }
+
+      colors[idx]     = mixedColor.r;
+      colors[idx + 1] = mixedColor.g;
+      colors[idx + 2] = mixedColor.b;
+    }
+
+    galaxyGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    galaxyGeo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+
+    var galaxyMat = new THREE.PointsMaterial({
+      size:         0.04,               // slightly larger so soft texture shows
+      map:          starTexture,        // circular glow — no square-pixel rendering
+      blending:     THREE.AdditiveBlending,
+      vertexColors: true,
+      depthWrite:   false,
+      transparent:  true,
+      alphaTest:    0.001
+    });
+    var galaxy = new THREE.Points(galaxyGeo, galaxyMat);
+    scene.add(galaxy);
+
+    // ─── Background star sphere ──────────────────────────────────────────────
+    var bgCount = isMobile ? GC.BG_STARS_MOBILE : GC.BG_STARS_DESKTOP;
+    var bgGeo   = new THREE.BufferGeometry();
+    var bgPos   = new Float32Array(bgCount * 3);
+
+    for (var bi = 0; bi < bgCount; bi++) {
+      var bgTheta = Math.random() * Math.PI * 2;
+      var bgPhi   = Math.acos(2 * Math.random() - 1);
+      var bgR     = 20 + Math.random() * 60;
+      bgPos[bi * 3]     = bgR * Math.sin(bgPhi) * Math.cos(bgTheta);
+      bgPos[bi * 3 + 1] = bgR * Math.cos(bgPhi);
+      bgPos[bi * 3 + 2] = bgR * Math.sin(bgPhi) * Math.sin(bgTheta);
+    }
+
+    bgGeo.setAttribute('position', new THREE.BufferAttribute(bgPos, 3));
+    var bgMat = new THREE.PointsMaterial({
+      size:        0.05,
+      color:       0xffffff,
+      transparent: true,
+      opacity:     0.8,
+      depthWrite:  false
+    });
+    var bgStars = new THREE.Points(bgGeo, bgMat);
+    scene.add(bgStars);
+
+    // ─── makeBgGalTex — global so secret galaxies can reuse it ───────────────
+    var makeBgGalTex = function (elong, angle) {
+      var sz  = 128;
+      var cvs = document.createElement('canvas');
+      cvs.width = sz; cvs.height = sz;
+      var ctx = cvs.getContext('2d');
+      ctx.save();
+      ctx.translate(sz / 2, sz / 2);
+      ctx.rotate(angle);
+      var rx = sz * 0.45;
+      var ry = rx * (1 - elong * 0.88);
+      var g  = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+      g.addColorStop(0,    'rgba(255,252,230,1.0)');
+      g.addColorStop(0.18, 'rgba(190,165,255,0.75)');
+      g.addColorStop(0.48, 'rgba(140,110,230,0.30)');
+      g.addColorStop(1,    'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.restore();
+      return new THREE.CanvasTexture(cvs);
+    };
+
+    // ─── Distant background galaxies ─────────────────────────────────────────
+    (function () {
+      // pos: world-space position, w/h: sprite scale, el: elongation (0=circle, 1=edge-on), ang: tilt angle
+      var defs = [
+        { pos: [ 44,  12, -38], w:  7.50, h: 3.30, el: 0.55, ang:  0.40 },
+        { pos: [-52,  -8,  30], w:  5.25, h: 1.20, el: 0.90, ang:  1.10 },
+        { pos: [ 18, -36,  55], w:  9.75, h: 6.75, el: 0.30, ang:  2.00 },
+        { pos: [-42,  26, -52], w:  4.80, h: 3.30, el: 0.50, ang:  0.70 },
+        { pos: [ 63,  -4,  14], w:  3.75, h: 0.90, el: 0.92, ang: -0.50 },
+        { pos: [-24,  43, -20], w:  6.75, h: 4.80, el: 0.20, ang:  1.80 },
+        { pos: [ 32, -20,  64], w:  3.30, h: 2.10, el: 0.68, ang:  0.90 },
+        { pos: [ 10,  50, -45], w:  9.00, h: 6.50, el: 0.25, ang:  0.60 },
+        { pos: [-30, -45,  40], w:  5.50, h: 1.50, el: 0.85, ang:  1.40 },
+        { pos: [ 55,  22,  38], w:  4.50, h: 3.00, el: 0.40, ang:  2.50 },
+      ];
+
+      defs.forEach(function (d) {
+        var mat = new THREE.SpriteMaterial({
+          map:         makeBgGalTex(d.el, d.ang),
+          blending:    THREE.AdditiveBlending,
+          transparent: true,
+          opacity:     0.55 + Math.random() * 0.25,
+          depthWrite:  false
+        });
+        var sprite = new THREE.Sprite(mat);
+        sprite.position.set(d.pos[0], d.pos[1], d.pos[2]);
+        sprite.scale.set(d.w, d.h, 1);
+        scene.add(sprite);
+      });
+    })();
+
+    // ─── Story/scene arrays — declared here so Black Hole and Story Stars can both use them ─
+    var storyGroups     = [];
+    var coreMeshes      = [];   // used for raycasting
+    var labelEls        = [];
+    var labelsContainer = document.getElementById('star-labels');
+
+    // ─── Secret galaxies — hidden story portals, discoverable by exploration ─
+    var SECRET_GALAXIES = [
+      {
+        id:      'secret_1',
+        title:   'Bí Mật Của Chúng Mình',
+        path:    './our_stories/secret_galaxy_1/index.html',
+        pos:     [-60, 10, -10], w: 5.70, h: 1.50, el: 0.78, ang: -0.30,
+        opacity: 0.65
+      },
+      {
+        id:      'secret_2',
+        title:   'Kỷ Niệm Riêng',
+        path:    './our_stories/secret_galaxy_2/index.html',
+        pos:     [-15, -18, -70], w: 10.00, h: 7.00, el: 0.20, ang: 0.30,
+        opacity: 0.70
+      }
+    ];
+    var secretGalaxySprites = [];
+    SECRET_GALAXIES.forEach(function (sg) {
+      var mat = new THREE.SpriteMaterial({
+        map:         makeBgGalTex(sg.el, sg.ang),
+        blending:    THREE.AdditiveBlending,
+        transparent: true,
+        opacity:     sg.opacity,
+        depthWrite:  false
+      });
+      var sprite = new THREE.Sprite(mat);
+      sprite.position.set(sg.pos[0], sg.pos[1], sg.pos[2]);
+      sprite.scale.set(sg.w, sg.h, 1);
+      sprite.userData = { secretGalaxy: true, id: sg.id, path: sg.path, title: sg.title };
+      scene.add(sprite);
+      secretGalaxySprites.push(sprite);
+    });
+
+    // ─── Black hole ───────────────────────────────────────────────────────────
+    var blackHoleGroup = new THREE.Group();
+    blackHoleGroup.position.set(28, -6, -44);
+
+    var bhCore = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0x050008 })
+    );
+    bhCore.userData = { isBlackHole: true, path: './blackhole/index.html' };
+    blackHoleGroup.add(bhCore);
+    coreMeshes.push(bhCore);
+
+    var bhDisk1 = new THREE.Mesh(
+      new THREE.TorusGeometry(1.1, 0.18, 8, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0xff6600, transparent: true, opacity: 0.70,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+      })
+    );
+    bhDisk1.rotation.x = Math.PI * 0.30;
+    blackHoleGroup.add(bhDisk1);
+
+    var bhDisk2 = new THREE.Mesh(
+      new THREE.TorusGeometry(1.7, 0.09, 8, 64),
+      new THREE.MeshBasicMaterial({
+        color: 0xcc2200, transparent: true, opacity: 0.45,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+      })
+    );
+    bhDisk2.rotation.x = Math.PI * 0.28;
+    bhDisk2.rotation.z = 0.3;
+    blackHoleGroup.add(bhDisk2);
+
+    var bhGlow = new THREE.Mesh(
+      new THREE.SphereGeometry(1.4, 16, 16),
+      new THREE.MeshBasicMaterial({
+        color: 0x220033, transparent: true, opacity: 0.50,
+        blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false
+      })
+    );
+    blackHoleGroup.add(bhGlow);
+    scene.add(blackHoleGroup);
+
+    // ─── Story stars ─────────────────────────────────────────────────────────
+    // Each story gets a Group: core sphere + two glow haloes.
+
+    for (var si = 0; si < STORIES.length; si++) {
+      var s     = STORIES[si];
+      var group = new THREE.Group();
+      group.position.set(s.position.x, s.position.y, s.position.z);
+      group.userData = { story: s, starType: s.starType };
+
+      // Core + glow — type-specific visuals
+      var core;
+      if (s.starType === 'sun') {
+        // Sun: bright yellow-white core + 3 glow layers
+        core = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size, 20, 20),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffe066') })
+        );
+        core.userData = s;
+        group.add(core);
+        coreMeshes.push(core);
+
+        var glow1 = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size * 1.8, 16, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffaa00'), transparent: true, opacity: 0.55, side: THREE.BackSide })
+        );
+        group.add(glow1);
+        var glow2 = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size * 3.2, 16, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff6600'), transparent: true, opacity: 0.25, side: THREE.BackSide })
+        );
+        group.add(glow2);
+        var glow3 = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size * 5.5, 16, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff3300'), transparent: true, opacity: 0.07, side: THREE.BackSide })
+        );
+        group.add(glow3);
+
+      } else if (s.starType === 'saturn') {
+        // Saturn: blue-white core + ring + 2 glow layers
+        core = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size, 20, 20),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color('#c8d4ff') })
+        );
+        core.userData = s;
+        group.add(core);
+        coreMeshes.push(core);
+
+        var ring = new THREE.Mesh(
+          new THREE.TorusGeometry(s.size * 2.4, s.size * 0.38, 8, 48),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color('#88aaff'), opacity: 0.80, transparent: true, side: THREE.DoubleSide })
+        );
+        ring.rotation.x = Math.PI * 0.38;
+        ring.rotation.z = 0.2;
+        group.add(ring);
+
+        var glow1 = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size * 2.6, 16, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color('#5577ff'), transparent: true, opacity: 0.35, side: THREE.BackSide })
+        );
+        group.add(glow1);
+        var glow2 = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size * 4.8, 16, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color('#2244cc'), transparent: true, opacity: 0.12, side: THREE.BackSide })
+        );
+        group.add(glow2);
+
+      } else {
+        // Default fallback: original glow style
+        core = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size, 16, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color(s.starColor) })
+        );
+        core.userData = s;
+        group.add(core);
+        coreMeshes.push(core);
+
+        var glow1 = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size * 2, 16, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color(s.glowColor), transparent: true, opacity: 0.3, side: THREE.BackSide })
+        );
+        group.add(glow1);
+        var glow2 = new THREE.Mesh(
+          new THREE.SphereGeometry(s.size * 4, 16, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color(s.glowColor), transparent: true, opacity: 0.1, side: THREE.BackSide })
+        );
+        group.add(glow2);
+      }
+
+      scene.add(group);
+      storyGroups.push(group);
+
+      // HTML label that follows the star on screen
+      var label = document.createElement('div');
+      label.className       = 'star-label';
+      label.textContent     = s.title;
+      label.style.color      = s.starColor;
+      label.style.textShadow = '0 0 10px ' + s.glowColor + ', 0 0 20px ' + s.glowColor;
+      labelsContainer.appendChild(label);
+      labelEls.push(label);
+    }
+
+    // ─── Orbital camera (spherical coordinates) ─────────────────────────────
+    var orbitRadius    = GC.ORBIT_RADIUS;
+    var targetRadius   = GC.ORBIT_RADIUS;  // zoom target — camera lerps toward this
+    var RADIUS_MIN     = GC.ORBIT_RADIUS_MIN;     // maximum zoom in
+    var RADIUS_MAX     = GC.ORBIT_RADIUS_MAX;      // maximum zoom out
+    var sphericalCoords = { theta: 0, phi: GC.ORBIT_PHI_START };
+    var lookAtTarget = new THREE.Vector3(0, 0, 0);  // world-space pan offset
+
+    function updateCamera() {
+      camera.position.x = orbitRadius * Math.sin(sphericalCoords.phi) * Math.sin(sphericalCoords.theta) + lookAtTarget.x;
+      camera.position.y = orbitRadius * Math.cos(sphericalCoords.phi) + lookAtTarget.y;
+      camera.position.z = orbitRadius * Math.sin(sphericalCoords.phi) * Math.cos(sphericalCoords.theta) + lookAtTarget.z;
+      camera.lookAt(lookAtTarget);
+    }
+    updateCamera();
+
+    // ─── Mouse drag controls ─────────────────────────────────────────────────
+    var isDragging    = false;
+    var isPanning     = false;   // true when right/middle mouse button is held
+    var mouseDownX    = 0;
+    var mouseDownY    = 0;
+    var lastMouseX    = 0;
+    var lastMouseY    = 0;
+    var DRAG_THRESHOLD = GC.DRAG_THRESHOLD_PX; // px — moves below this count as a click
+
+    canvas.addEventListener('mousedown', function(e) {
+      isDragging = true;
+      isPanning  = (e.button === 2 || e.button === 1);
+      mouseDownX = lastMouseX = e.clientX;
+      mouseDownY = lastMouseY = e.clientY;
+    });
+
+    canvas.addEventListener('mousemove', function(e) {
+      if (!isDragging) {
+        checkHover(e.clientX, e.clientY);
+        return;
+      }
+      var dx = e.clientX - lastMouseX;
+      var dy = e.clientY - lastMouseY;
+      if (isPanning) {
+        // Right/middle drag → pan the look-at target in camera space
+        var panScale = orbitRadius * GC.PAN_SPEED_BASE * 0.012;
+        var fwd = new THREE.Vector3();
+        camera.getWorldDirection(fwd);
+        var rightVec = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+        lookAtTarget.addScaledVector(rightVec, -dx * panScale);
+        lookAtTarget.y += dy * panScale;
+      } else {
+        // Left drag → orbit rotation
+        sphericalCoords.theta -= dx * GC.DRAG_SPEED;
+        sphericalCoords.phi   -= dy * GC.DRAG_SPEED;
+        sphericalCoords.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, sphericalCoords.phi));
+      }
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      updateCamera();
+    });
+
+    canvas.addEventListener('mouseup', function(e) {
+      var moved = Math.sqrt(
+        Math.pow(e.clientX - mouseDownX, 2) + Math.pow(e.clientY - mouseDownY, 2)
+      );
+      isDragging = false;
+      isPanning  = false;
+      if (moved < DRAG_THRESHOLD) {
+        handleClick(e.clientX, e.clientY);
+      }
+    });
+
+    canvas.addEventListener('mouseleave', function() { isDragging = false; isPanning = false; });
+    canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
+
+    // ─── Touch controls ──────────────────────────────────────────────────────
+    var isTouching        = false;
+    var touchStartX       = 0;
+    var touchStartY       = 0;
+    var lastTouchX        = 0;
+    var lastTouchY        = 0;
+    var isPinching        = false;     // true when 2 fingers are on screen
+    var lastPinchDist     = 0;         // pixel distance between the 2 fingers last frame
+    var lastTwoFingerMidX = 0;         // midpoint of 2-finger touch — used for pan
+    var lastTwoFingerMidY = 0;
+    var twoFingerPanActive = false;    // true when 2-finger gesture is treated as pan
+
+    canvas.addEventListener('touchstart', function(e) {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        // Single finger — start rotation
+        isTouching    = true;
+        isPinching    = false;
+        touchStartX   = lastTouchX = e.touches[0].clientX;
+        touchStartY   = lastTouchY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        // Two fingers — start pinch zoom
+        isTouching    = false;
+        isPinching    = true;
+        var dx = e.touches[0].clientX - e.touches[1].clientX;
+        var dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastPinchDist = Math.sqrt(dx * dx + dy * dy);
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', function(e) {
+      e.preventDefault();
+      if (e.touches.length === 1 && isTouching && !isPinching) {
+        // Rotate
+        var dx = e.touches[0].clientX - lastTouchX;
+        var dy = e.touches[0].clientY - lastTouchY;
+        sphericalCoords.theta -= dx * GC.DRAG_SPEED;
+        sphericalCoords.phi   -= dy * GC.DRAG_SPEED;
+        sphericalCoords.phi    = Math.max(0.1, Math.min(Math.PI - 0.1, sphericalCoords.phi));
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        updateCamera();
+      } else if (e.touches.length === 2) {
+        var dx   = e.touches[0].clientX - e.touches[1].clientX;
+        var dy   = e.touches[0].clientY - e.touches[1].clientY;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        var midX = (e.touches[0].clientX + e.touches[1].clientX) * 0.5;
+        var midY = (e.touches[0].clientY + e.touches[1].clientY) * 0.5;
+        if (lastPinchDist > 0) {
+          var pinchDelta = Math.abs(dist - lastPinchDist);
+          if (pinchDelta < 8) {
+            // Minimal pinch change → treat as pan gesture
+            if (twoFingerPanActive) {
+              var panScale = orbitRadius * GC.PAN_SPEED_BASE * 0.015;
+              var fwd2 = new THREE.Vector3();
+              camera.getWorldDirection(fwd2);
+              var rightVec2 = new THREE.Vector3().crossVectors(fwd2, camera.up).normalize();
+              var mdx = midX - lastTwoFingerMidX;
+              var mdy = midY - lastTwoFingerMidY;
+              lookAtTarget.addScaledVector(rightVec2, -mdx * panScale);
+              lookAtTarget.y += mdy * panScale;
+              updateCamera();
+            }
+            twoFingerPanActive = true;
+          } else {
+            // Significant pinch change → zoom
+            twoFingerPanActive = false;
+            targetRadius *= lastPinchDist / dist;
+            targetRadius  = Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, targetRadius));
+          }
+        }
+        lastPinchDist     = dist;
+        lastTwoFingerMidX = midX;
+        lastTwoFingerMidY = midY;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', function(e) {
+      e.preventDefault();
+      if (e.touches.length === 0) {
+        // Last finger lifted
+        var dx   = lastTouchX - touchStartX;
+        var dy   = lastTouchY - touchStartY;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (isTouching && !isPinching && dist < DRAG_THRESHOLD) {
+          handleClick(touchStartX, touchStartY);
+        }
+        isTouching         = false;
+        isPinching         = false;
+        lastPinchDist      = 0;
+        twoFingerPanActive = false;
+        lastTwoFingerMidX  = 0;
+        lastTwoFingerMidY  = 0;
+      } else if (e.touches.length === 1 && isPinching) {
+        // Went from 2 fingers → 1; switch seamlessly to rotation
+        isPinching         = false;
+        lastPinchDist      = 0;
+        twoFingerPanActive = false;
+        lastTwoFingerMidX  = 0;
+        lastTwoFingerMidY  = 0;
+        isTouching         = true;
+        touchStartX   = lastTouchX = e.touches[0].clientX;
+        touchStartY   = lastTouchY = e.touches[0].clientY;
+      }
+    }, { passive: false });
+
+    // ─── Keyboard pan (WASD / arrow keys / Q–E) ───────────────────────────────
+    var keysDown = {};
+    document.addEventListener('keydown', function(e) { keysDown[e.key] = true; });
+    document.addEventListener('keyup',   function(e) { keysDown[e.key] = false; });
+
+    function applyKeyboardPan() {
+      var any = keysDown['a'] || keysDown['A'] || keysDown['ArrowLeft']  ||
+                keysDown['d'] || keysDown['D'] || keysDown['ArrowRight'] ||
+                keysDown['w'] || keysDown['W'] || keysDown['ArrowUp']    ||
+                keysDown['s'] || keysDown['S'] || keysDown['ArrowDown']  ||
+                keysDown['q'] || keysDown['Q'] ||
+                keysDown['e'] || keysDown['E'];
+      if (!any) return;
+
+      var panStep = orbitRadius * GC.PAN_SPEED_BASE * 0.5;
+      var fwdK = new THREE.Vector3();
+      camera.getWorldDirection(fwdK);
+      var rightK = new THREE.Vector3().crossVectors(fwdK, camera.up).normalize();
+      // Horizontal forward (project onto XZ plane so W/S feel like moving into the scene)
+      var hFwd = new THREE.Vector3(fwdK.x, 0, fwdK.z);
+      if (hFwd.lengthSq() > 0.0001) { hFwd.normalize(); }
+
+      if (keysDown['a'] || keysDown['A'] || keysDown['ArrowLeft'])  { lookAtTarget.addScaledVector(rightK, -panStep); }
+      if (keysDown['d'] || keysDown['D'] || keysDown['ArrowRight']) { lookAtTarget.addScaledVector(rightK,  panStep); }
+      if (keysDown['w'] || keysDown['W'] || keysDown['ArrowUp'])    { lookAtTarget.addScaledVector(hFwd,    panStep); }
+      if (keysDown['s'] || keysDown['S'] || keysDown['ArrowDown'])  { lookAtTarget.addScaledVector(hFwd,   -panStep); }
+      if (keysDown['q'] || keysDown['Q'])                            { lookAtTarget.y += panStep; }
+      if (keysDown['e'] || keysDown['E'])                            { lookAtTarget.y -= panStep; }
+      updateCamera();
+    }
+
+    // ─── Mouse wheel zoom ─────────────────────────────────────────────────────
+    canvas.addEventListener('wheel', function(e) {
+      e.preventDefault();
+      // Proportional zoom: step is % of current distance → feels consistent at any zoom level
+      var direction = e.deltaY > 0 ? 1 : -1;
+      targetRadius += direction * targetRadius * GC.ZOOM_STEP;
+      targetRadius  = Math.max(RADIUS_MIN, Math.min(RADIUS_MAX, targetRadius));
+    }, { passive: false });
+
+    // ─── Raycasting ──────────────────────────────────────────────────────────
+    var raycaster = new THREE.Raycaster();
+    var mouse2D   = new THREE.Vector2();
+
+    function setNDC(clientX, clientY) {
+      mouse2D.x =  (clientX / window.innerWidth)  * 2 - 1;
+      mouse2D.y = -(clientY / window.innerHeight) * 2 + 1;
+    }
+
+    // ─── Warp-speed black-hole absorption animation ───────────────────────────
+    function startWarpAnimation(onComplete) {
+      var wc     = document.getElementById('warp-canvas');
+      if (!wc) { if (onComplete) onComplete(); return; }
+      var ctx    = wc.getContext('2d');
+      var W      = window.innerWidth, H = window.innerHeight;
+      wc.width   = W; wc.height = H;
+      wc.style.display = 'block';
+      var startTime = Date.now();
+      var DURATION  = 2200;
+      var NUM_STREAKS = 220;
+      var streaks = [];
+      for (var i = 0; i < NUM_STREAKS; i++) {
+        var angle = (i / NUM_STREAKS) * Math.PI * 2 + Math.sin(i * 0.7) * 0.15;
+        streaks.push({
+          angle:  angle,
+          rFrac:  0.35 + (Math.abs(Math.sin(i * 127.1)) * 0.65),
+          width:  0.5 + Math.abs(Math.sin(i * 43.3)) * 2.0,
+          hue:    Math.abs(Math.sin(i * 0.31)) < 0.4 ? 30 : 200
+        });
+      }
+      function drawFrame() {
+        var elapsed  = Date.now() - startTime;
+        var progress = Math.min(elapsed / DURATION, 1.0);
+        var eased    = 1 - Math.pow(1 - progress, 3);
+        ctx.clearRect(0, 0, W, H);
+        var grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W, H) * 0.8);
+        grad.addColorStop(0,   'rgba(0,0,0,0)');
+        grad.addColorStop(0.5 + eased * 0.4, 'rgba(0,0,0,' + (eased * 0.95) + ')');
+        grad.addColorStop(1,   'rgba(0,0,0,' + eased + ')');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+        var cx = W / 2, cy = H / 2;
+        var maxR = Math.sqrt(cx * cx + cy * cy) * 1.2;
+        streaks.forEach(function(s) {
+          var outerR = maxR * s.rFrac * (1.0 - eased * 0.92);
+          var streakLen = maxR * 0.06 * (1 + eased * 4);
+          var innerR = Math.max(0, outerR - streakLen);
+          var ox = cx + Math.cos(s.angle) * outerR;
+          var oy = cy + Math.sin(s.angle) * outerR;
+          var ix = cx + Math.cos(s.angle) * innerR;
+          var iy = cy + Math.sin(s.angle) * innerR;
+          var alpha = Math.min(1.0, eased * 2.5) * (0.4 + eased * 0.6);
+          ctx.beginPath();
+          ctx.moveTo(ox, oy);
+          ctx.lineTo(ix, iy);
+          ctx.strokeStyle = s.hue === 30
+            ? ('rgba(255,' + Math.floor(120 + eased * 135) + ',40,' + alpha + ')')
+            : ('rgba(180,220,255,' + alpha + ')');
+          ctx.lineWidth = s.width * (1 + eased * 3);
+          ctx.stroke();
+        });
+        if (progress > 0.75) {
+          var flashAlpha = (progress - 0.75) / 0.25;
+          var flGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W,H)*0.3*flashAlpha);
+          flGrad.addColorStop(0,   'rgba(255,100,20,' + (flashAlpha * 0.9) + ')');
+          flGrad.addColorStop(0.4, 'rgba(255,40,0,' + (flashAlpha * 0.4) + ')');
+          flGrad.addColorStop(1,   'rgba(0,0,0,0)');
+          ctx.fillStyle = flGrad;
+          ctx.fillRect(0, 0, W, H);
+        }
+        if (progress < 1.0) {
+          requestAnimationFrame(drawFrame);
+        } else {
+          if (onComplete) onComplete();
+        }
+      }
+      drawFrame();
+    }
+
+    function handleClick(clientX, clientY) {
+      setNDC(clientX, clientY);
+      raycaster.setFromCamera(mouse2D, camera);
+
+      // ── Story stars + black hole ─────────────────────────────────────────
+      var hits = raycaster.intersectObjects(coreMeshes);
+      if (hits.length > 0) {
+        var obj = hits[0].object;
+        if (obj.userData.isBlackHole) {
+          var destPath = obj.userData.path;
+          // Remove from raycast targets so it cannot be clicked a second time
+          var bhIdx = coreMeshes.indexOf(obj);
+          if (bhIdx !== -1) { coreMeshes.splice(bhIdx, 1); }
+          startWarpAnimation(function() { window.location.href = destPath; });
+          return;
+        }
+        window.location.href = obj.userData.path;
+        return;
+      }
+
+      // ── Secret galaxies ─────────────────────────────────────────────────
+      var secretHits = raycaster.intersectObjects(secretGalaxySprites);
+      if (secretHits.length > 0) {
+        var sg    = secretHits[0].object.userData;
+        var modal = document.getElementById('secret-discovery');
+        if (modal) {
+          var link = document.getElementById('secret-link');
+          if (link) { link.href = sg.path; link.textContent = sg.title || 'Khám phá bí mật'; }
+          modal.style.display = 'flex';
+          setTimeout(function () { modal.style.opacity = '1'; }, 30);
+        }
+      }
+    }
+
+    function checkHover(clientX, clientY) {
+      setNDC(clientX, clientY);
+      raycaster.setFromCamera(mouse2D, camera);
+      var hits = raycaster.intersectObjects(coreMeshes);
+      canvas.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+    }
+
+
+    // ─── Animation loop ───────────────────────────────────────────────────────
+    var tempVec = new THREE.Vector3();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      applyKeyboardPan();
+      var elapsed = clock.getElapsedTime();
+
+      // Slowly rotate the whole galaxy
+      galaxy.rotation.y  = elapsed * 0.03;
+      bgStars.rotation.y = elapsed * 0.002;
+      bhDisk1.rotation.z += 0.008;
+      bhDisk2.rotation.z -= 0.004;
+
+      // Smooth zoom — lerp orbitRadius toward targetRadius each frame
+      if (Math.abs(orbitRadius - targetRadius) > 0.001) {
+        orbitRadius += (targetRadius - orbitRadius) * GC.ZOOM_DAMPING;
+        updateCamera();
+      }
+
+      // Pulse story stars — speed and amplitude vary by star type
+      for (var pi = 0; pi < storyGroups.length; pi++) {
+        var s          = storyGroups[pi].userData.story;
+        var pulseSpeed = s.starType === 'sun' ? 2.2 : s.starType === 'saturn' ? 1.2 : 1.5;
+        var pulseAmt   = s.starType === 'sun' ? 0.22 : s.starType === 'saturn' ? 0.10 : 0.15;
+        var scale = 1 + pulseAmt * Math.sin(elapsed * pulseSpeed + pi * 2);
+        storyGroups[pi].scale.setScalar(scale);
+      }
+
+      // Project story star world positions → screen, update HTML labels
+      for (var li = 0; li < storyGroups.length; li++) {
+        tempVec.copy(storyGroups[li].position).project(camera);
+        var sx = (tempVec.x * 0.5 + 0.5) * window.innerWidth;
+        var sy = (-tempVec.y * 0.5 + 0.5) * window.innerHeight;
+        labelEls[li].style.left    = sx + 'px';
+        labelEls[li].style.top     = sy + 'px';
+        // Show labels only when zoomed in close enough; secret items never appear here
+        var closeEnough = orbitRadius <= GC.LABEL_SHOW_RADIUS;
+        labelEls[li].style.opacity = (tempVec.z < 1 && closeEnough) ? '1' : '0';
+      }
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ─── Secret discovery modal close button ─────────────────────────────────
+    (function () {
+      var btn = document.getElementById('secret-close');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        var m = document.getElementById('secret-discovery');
+        if (!m) return;
+        m.style.opacity = '0';
+        setTimeout(function () { m.style.display = 'none'; }, 520);
+      });
+    })();
+
+    // ─── Resize handler ───────────────────────────────────────────────────────
+    window.addEventListener('resize', function() {
+      isMobile          = window.innerWidth < 768;
+      camera.aspect     = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+  </script>
+
+  <!-- ─── Meteor shower overlay ────────────────────────────────────────────
+       MeteorShower.trigger()        — default shower (random position)
+       MeteorShower.trigger({...})   — custom (see shared/meteor-shower.js)
+       MeteorShower.stop()           — cancel immediately
+       ──────────────────────────────────────────────────────────────────── -->
+  <script src="./shared/meteor-shower.js"></script>
+  <script>
+    // Auto-trigger 15 seconds after page load.
+    // Swap setTimeout for setInterval, a custom schedule, or an event listener
+    // whenever you want a different trigger rule.
+    setTimeout(function () {
+      MeteorShower.trigger();
+    }, 15000);
+  </script>
+</body>
+</html>
