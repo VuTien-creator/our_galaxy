@@ -69,7 +69,9 @@
       ZOOM_DAMPING:       0.1,
       PAN_SPEED_BASE:     0.04,
       DRAG_THRESHOLD_PX:  5,
-      LAZY_LOAD_DIST_SQ:  9.0   // load texture when camera within 3 world-units of card (3²=9)
+      LAZY_LOAD_DIST_SQ:  9.0,  // load texture when camera within 3 world-units of card (3²=9)
+      AUTOPILOT_DELAY:    4.0,  // seconds idle before auto-orbit kicks in
+      AUTOPILOT_SPEED:    0.0025 // radians/second orbit speed
     };
 
     var CARD = {
@@ -436,11 +438,13 @@
     }
 
     // ─── Build card scene objects ───────────────────────────────────────────
-    var cardMeshes = [];
+    // Add cards as children of bhGalaxy so they rotate WITH the galaxy
+    var cardMeshes  = [];
+    var _tmpWPos    = new THREE.Vector3();  // reused for world-position distance checks
     for (var ci = 0; ci < PHOTOS.length; ci++) {
       var pos  = getClusterPosition(ci, PHOTOS.length);
       var card = createCard(PHOTOS[ci], pos, ci);
-      scene.add(card);
+      bhGalaxy.add(card);   // ← child of galaxy, not scene
       cardMeshes.push(card);
     }
 
@@ -466,7 +470,10 @@
     var mouseDownX = 0, mouseDownY = 0;
     var lastMouseX = 0, lastMouseY = 0;
 
+    var lastInteractAt = 0;   // tracks last user input time for auto-orbit
+
     canvas.addEventListener('mousedown', function (e) {
+      lastInteractAt = clock.getElapsedTime();
       isDragging = true;
       isPanning  = (e.button === 2 || e.button === 1);
       mouseDownX = lastMouseX = e.clientX;
@@ -516,6 +523,7 @@
     var twoFingerPanActive = false;
 
     canvas.addEventListener('touchstart', function (e) {
+      lastInteractAt = clock.getElapsedTime();
       e.preventDefault();
       if (e.touches.length === 1) {
         isTouching  = true;
@@ -629,6 +637,7 @@
 
     // ─── Scroll-wheel zoom ─────────────────────────────────────────────────
     canvas.addEventListener('wheel', function (e) {
+      lastInteractAt = clock.getElapsedTime();
       e.preventDefault();
       var direction = e.deltaY > 0 ? 1 : -1;
       targetRadius += direction * targetRadius * BH.ZOOM_STEP;
@@ -697,6 +706,12 @@
 
       applyKeyboardPan();
 
+      // Auto-orbit when user is idle (no interaction for AUTOPILOT_DELAY seconds)
+      if (elapsed - lastInteractAt > BH.AUTOPILOT_DELAY) {
+        sphericalCoords.theta += BH.AUTOPILOT_SPEED;
+        updateCamera();
+      }
+
       // Smooth zoom lerp
       if (Math.abs(orbitRadius - targetRadius) > 0.001) {
         orbitRadius += (targetRadius - orbitRadius) * BH.ZOOM_DAMPING;
@@ -714,9 +729,10 @@
         c.position.y  = ud.baseY +
           Math.sin(elapsed * ud.bobSpeed + ud.phaseOffset) * ud.bobAmp;
 
-        // Lazy load: trigger only when camera is within LAZY_LOAD_DIST_SQ of card
+        // Lazy load: use world position (card is child of rotating bhGalaxy)
         if (!ud.textureLoaded && !ud.loadingStarted) {
-          if (camera.position.distanceToSquared(c.position) < BH.LAZY_LOAD_DIST_SQ) {
+          c.getWorldPosition(_tmpWPos);
+          if (camera.position.distanceToSquared(_tmpWPos) < BH.LAZY_LOAD_DIST_SQ) {
             ud.loadingStarted = true;
             (function (mesh) {
               var ldr = new THREE.TextureLoader();

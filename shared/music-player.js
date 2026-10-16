@@ -21,10 +21,13 @@ function createMusicPlayer(files) {
 
   var shuffled     = [];
   var currentIndex = 0;
-  var audio        = null;
   var started      = false;
 
-  // Fisher-Yates shuffle (returns a new array, doesn't mutate original)
+  // Single Audio element reused across all songs — avoids CORS issues
+  // that arise when creating new Audio() from async (non-gesture) events.
+  var audio = new Audio();
+  audio.volume = 0.45;
+
   function shuffle(arr) {
     var copy = arr.slice();
     for (var i = copy.length - 1; i > 0; i--) {
@@ -36,30 +39,24 @@ function createMusicPlayer(files) {
     return copy;
   }
 
-  // Load and play the next song in the shuffled playlist
   function playNext() {
     if (shuffled.length === 0) return;
-
-    // Re-shuffle when the whole playlist has been played
     if (currentIndex >= shuffled.length) {
-      shuffled      = shuffle(files);
-      currentIndex  = 0;
+      shuffled     = shuffle(files);
+      currentIndex = 0;
     }
-
-    var src = shuffled[currentIndex];
-    currentIndex++;
-
-    // Lazy: create a fresh Audio object for each song
-    if (audio) {
-      audio.pause();
-      audio.src = '';
-    }
-    audio          = new Audio(src);
-    audio.volume   = 0.45;
-    audio.onerror  = function () { playNext(); };  // skip broken files
-    audio.onended  = function () { playNext(); };  // advance playlist
+    var src = shuffled[currentIndex++];
+    audio.src = src;   // swap src on the existing element — no new Audio() needed
+    audio.load();      // reset the element to load the new source
     audio.play().catch(function () {});
   }
+
+  // Wire events once on the single audio element
+  audio.onerror = function () {
+    // Skip broken/missing file and try the next one
+    if (currentIndex < shuffled.length) { playNext(); }
+  };
+  audio.onended = function () { playNext(); };
 
   function start() {
     if (started) return;
@@ -69,13 +66,12 @@ function createMusicPlayer(files) {
     playNext();
   }
 
-  // Auto-start on first user interaction (browser requires gesture for audio)
   document.addEventListener('click',    function () { start(); }, { once: true });
   document.addEventListener('touchend', function () { start(); }, { once: true });
 
   return {
     start:     start,
-    stop:      function () { if (audio) { audio.pause(); audio.src = ''; } },
-    setVolume: function (v) { if (audio) audio.volume = Math.max(0, Math.min(1, v)); }
+    stop:      function () { audio.pause(); },
+    setVolume: function (v) { audio.volume = Math.max(0, Math.min(1, v)); }
   };
 }
