@@ -6,6 +6,7 @@
   <title>Không Gian Tối — Our Galaxy</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="../shared/music-player.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000000; overflow: hidden; }
@@ -67,7 +68,8 @@
       ZOOM_STEP:          0.08,
       ZOOM_DAMPING:       0.1,
       PAN_SPEED_BASE:     0.04,
-      DRAG_THRESHOLD_PX:  5
+      DRAG_THRESHOLD_PX:  5,
+      LAZY_LOAD_DIST_SQ:  9.0   // load texture when camera within 3 world-units of card (3²=9)
     };
 
     var CARD = {
@@ -75,9 +77,9 @@
       height:            0.042,
       spinSpeedBase:     0.4,
       spinSpeedVariance: 0.3,
-      bobSpeedBase:      0.6,
-      bobSpeedVariance:  0.4,
-      bobAmplitude:      0.12
+      bobSpeedBase:      0.25,
+      bobSpeedVariance:  0.15,
+      bobAmplitude:      0.015   // very gentle float
     };
 
     var CLUSTER = {
@@ -85,42 +87,145 @@
       ySpread: 0.15    // very flat within galaxy disc plane
     };
 
-    // To add more photos: drop .webp files into the blackhole/ folder, then add an entry here.
-    // Note: spaces in filenames are encoded as %20 for reliable cross-platform loading.
+    // Five cluster centers along galaxy arms (radius ~2.5–3.5 from centre)
+    var CLUSTER_CENTERS = [
+      { x:  2.5,  z:  0.8 },   // arm 1, inner
+      { x: -1.8,  z:  2.2 },   // arm 2, inner
+      { x: -2.8,  z: -1.2 },   // arm 1, outer
+      { x:  1.2,  z: -2.8 },   // arm 2, outer
+      { x:  3.2,  z: -1.5 },   // arm 1, far edge
+    ];
+    var CLUSTER_JITTER   = 0.28;  // ± spread within each cluster (world units)
+    var CLUSTER_Y_SPREAD = 0.05;  // barely any Y — stay flat in galaxy disc
+
+    // To add more photos: drop .webp files into blackhole/pictures/ and add an entry here.
+    // Files with spaces in name: encode spaces as %20.
     var PHOTOS = [
-      { src: './IMG_20260521225624473.webp', title: '' },
-      { src: './IMG_20260521230640532.webp', title: '' },
-      { src: './IMG_20260521232741911.webp', title: '' },
-      { src: './IMG_20260521233146088.webp', title: '' },
-      { src: './IMG_20260521233623191.webp', title: '' },
-      { src: './IMG_20260521233813658.webp', title: '' },
-      { src: './IMG_20260521235418179.webp', title: '' },
-      { src: './IMG_20260521235441418.webp', title: '' },
-      { src: './IMG_20260521235853316.webp', title: '' },
-      { src: './KAG_0543.webp', title: '' },
-      { src: './KAG_0567.webp', title: '' },
-      { src: './KAG_0582.webp', title: '' },
-      { src: './KAG_0676.webp', title: '' },
-      { src: './KAG_0826.webp', title: '' },
-      { src: './KAG_0951.webp', title: '' },
-      { src: './KAG_1333.webp', title: '' },
-      { src: './KAG_1414.webp', title: '' },
-      { src: './KAG_1415.webp', title: '' },
-      { src: './KAG_1418.webp', title: '' },
-      { src: './KAG_1421.webp', title: '' },
-      { src: './KAG_1422.webp', title: '' },
-      { src: './KAG_1427.webp', title: '' },
-      { src: './KAG_1432.webp', title: '' },
-      { src: './KAG_1565.webp', title: '' },
-      { src: './KAG_2197.webp', title: '' },
-      { src: './KAG_2706.webp', title: '' },
-      { src: './KAG_2716.webp', title: '' },
-      { src: './KAG_2843.webp', title: '' },
-      { src: './KAG_2913.webp', title: '' },
-      { src: './KAG_3143.webp', title: '' },
-      { src: './KAG_3270.webp', title: '' },
-      { src: './KAG_3290.webp', title: '' },
-      { src: './KAG_3291.webp', title: '' },
+      { src: './pictures/1.webp' },
+      { src: './pictures/1%202.webp' },
+      { src: './pictures/2.webp' },
+      { src: './pictures/2%202.webp' },
+      { src: './pictures/3.webp' },
+      { src: './pictures/4.webp' },
+      { src: './pictures/5.webp' },
+      { src: './pictures/6.webp' },
+      { src: './pictures/1768710841_IMG_1943%202.webp' },
+      { src: './pictures/1768710841_IMG_1951%202.webp' },
+      { src: './pictures/DSCF4628.webp' },
+      { src: './pictures/DSCF4704.webp' },
+      { src: './pictures/DSCF4706.webp' },
+      { src: './pictures/DSCF4719.webp' },
+      { src: './pictures/DSCF4729%202.webp' },
+      { src: './pictures/DSCF4743.webp' },
+      { src: './pictures/DSCF4757.webp' },
+      { src: './pictures/DSCF4766.webp' },
+      { src: './pictures/DSCF4769.webp' },
+      { src: './pictures/DSCF4772.webp' },
+      { src: './pictures/DSCF4819.webp' },
+      { src: './pictures/IMG_20260521225624473.webp' },
+      { src: './pictures/IMG_20260521225658750.webp' },
+      { src: './pictures/IMG_20260521230127795.webp' },
+      { src: './pictures/IMG_20260521230640532.webp' },
+      { src: './pictures/IMG_20260521230746422.webp' },
+      { src: './pictures/IMG_20260521231142018.webp' },
+      { src: './pictures/IMG_20260521231335151.webp' },
+      { src: './pictures/IMG_20260521231643840.webp' },
+      { src: './pictures/IMG_20260521231837717.webp' },
+      { src: './pictures/IMG_20260521232312944.webp' },
+      { src: './pictures/IMG_20260521232512929.webp' },
+      { src: './pictures/IMG_20260521232557007.webp' },
+      { src: './pictures/IMG_20260521232623074.webp' },
+      { src: './pictures/IMG_20260521232741911.webp' },
+      { src: './pictures/IMG_20260521233116582.webp' },
+      { src: './pictures/IMG_20260521233146088.webp' },
+      { src: './pictures/IMG_20260521233200484.webp' },
+      { src: './pictures/IMG_20260521233542767.webp' },
+      { src: './pictures/IMG_20260521233600485.webp' },
+      { src: './pictures/IMG_20260521233623191.webp' },
+      { src: './pictures/IMG_20260521233749554.webp' },
+      { src: './pictures/IMG_20260521233813658.webp' },
+      { src: './pictures/IMG_20260521233923150.webp' },
+      { src: './pictures/IMG_20260521234254556.webp' },
+      { src: './pictures/IMG_20260521234424684.webp' },
+      { src: './pictures/IMG_20260521234446502.webp' },
+      { src: './pictures/IMG_20260521234510285.webp' },
+      { src: './pictures/IMG_20260521234552848.webp' },
+      { src: './pictures/IMG_20260521234619032.webp' },
+      { src: './pictures/IMG_20260521234724743.webp' },
+      { src: './pictures/IMG_20260521234756352.webp' },
+      { src: './pictures/IMG_20260521234821221.webp' },
+      { src: './pictures/IMG_20260521234849741.webp' },
+      { src: './pictures/IMG_20260521235151888.webp' },
+      { src: './pictures/IMG_20260521235219809.webp' },
+      { src: './pictures/IMG_20260521235245025.webp' },
+      { src: './pictures/IMG_20260521235305775.webp' },
+      { src: './pictures/IMG_20260521235326929.webp' },
+      { src: './pictures/IMG_20260521235354430.webp' },
+      { src: './pictures/IMG_20260521235418179.webp' },
+      { src: './pictures/IMG_20260521235441418.webp' },
+      { src: './pictures/IMG_20260521235459461.webp' },
+      { src: './pictures/IMG_20260521235524607.webp' },
+      { src: './pictures/IMG_20260521235552366.webp' },
+      { src: './pictures/IMG_20260521235616309.webp' },
+      { src: './pictures/IMG_20260521235638757.webp' },
+      { src: './pictures/IMG_20260521235713424.webp' },
+      { src: './pictures/IMG_20260521235737373.webp' },
+      { src: './pictures/IMG_20260521235853316.webp' },
+      { src: './pictures/IMG_20260521235958602.webp' },
+      { src: './pictures/IMG_20260522000029717.webp' },
+      { src: './pictures/IMG_20260522000059221.webp' },
+      { src: './pictures/IMG_20260522000127405.webp' },
+      { src: './pictures/IMG_20260522060405151.webp' },
+      { src: './pictures/IMG_20260522060437677.webp' },
+      { src: './pictures/IMG_20260522060500231.webp' },
+      { src: './pictures/IMG_20260522060534247.webp' },
+      { src: './pictures/IMG_20260522060607880.webp' },
+      { src: './pictures/IMG_20260522060641697.webp' },
+      { src: './pictures/IMG_20260522060712742.webp' },
+      { src: './pictures/IMG_20260522060739965.webp' },
+      { src: './pictures/IMG_20260522060805282.webp' },
+      { src: './pictures/IMG_20260522060839215.webp' },
+      { src: './pictures/IMG_20260522060912326.webp' },
+      { src: './pictures/IMG_20260522061111756.webp' },
+      { src: './pictures/IMG_20260522061150022.webp' },
+      { src: './pictures/IMG_20260522061222056.webp' },
+      { src: './pictures/IMG_20260522061242414.webp' },
+      { src: './pictures/IMG_20260522061306981.webp' },
+      { src: './pictures/IMG_20260522061326080.webp' },
+      { src: './pictures/IMG_20260522074108116.webp' },
+      { src: './pictures/IMG_20260522080630457.webp' },
+      { src: './pictures/IMG_20260522081612244.webp' },
+      { src: './pictures/IMG_20260522081749013.webp' },
+      { src: './pictures/IMG_20260522082526055.webp' },
+      { src: './pictures/IMG_20260522082559658.webp' },
+      { src: './pictures/IMG_20260522085454514.webp' },
+      { src: './pictures/IMG_20260522090104095.webp' },
+      { src: './pictures/KAG_0543.webp' },
+      { src: './pictures/KAG_0567.webp' },
+      { src: './pictures/KAG_0582.webp' },
+      { src: './pictures/KAG_0676.webp' },
+      { src: './pictures/KAG_0826.webp' },
+      { src: './pictures/KAG_0951.webp' },
+      { src: './pictures/KAG_1333.webp' },
+      { src: './pictures/KAG_1414.webp' },
+      { src: './pictures/KAG_1415.webp' },
+      { src: './pictures/KAG_1418.webp' },
+      { src: './pictures/KAG_1421.webp' },
+      { src: './pictures/KAG_1422.webp' },
+      { src: './pictures/KAG_1427.webp' },
+      { src: './pictures/KAG_1432.webp' },
+      { src: './pictures/KAG_1565.webp' },
+      { src: './pictures/KAG_2197.webp' },
+      { src: './pictures/KAG_2706.webp' },
+      { src: './pictures/KAG_2716.webp' },
+      { src: './pictures/KAG_2843.webp' },
+      { src: './pictures/KAG_2913.webp' },
+      { src: './pictures/KAG_2978%20copy.webp' },
+      { src: './pictures/KAG_2994%20copy.webp' },
+      { src: './pictures/KAG_3143.webp' },
+      { src: './pictures/KAG_3270.webp' },
+      { src: './pictures/KAG_3290.webp' },
+      { src: './pictures/KAG_3291.webp' },
     ];
     /* OLD TODO paths — kept for reference:
       { src: '../our_stories/example_1/pictures/photo1.webp',        title: 'Khoảnh khắc 1' },
@@ -130,6 +235,14 @@
       { src: '../our_stories/example_1 copy/pictures/photo2.webp',   title: 'Khoảnh khắc 5' },
       { src: '../our_stories/example_1 copy/pictures/photo3.webp',   title: 'Khoảnh khắc 6' },
     */
+
+    // ─── Music (shared player) ────────────────────────────────────────────────
+    // Drop mp3 files into blackhole/musics/ and add paths here.
+    var MUSIC_FILES = [
+      './musics/goi_con_tim_lam_qua.mp3',
+      './musics/lo_thuong_nhau.mp3',
+    ];
+    createMusicPlayer(MUSIC_FILES);
 
     // ─── Three.js scene, camera, renderer, clock ───────────────────────────
     var canvas   = document.getElementById('bh-canvas');
@@ -288,14 +401,11 @@
     var GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));  // ≈ 2.399 rad / 137.5°
 
     function getClusterPosition(index, total) {
-      var r     = CLUSTER.radius * Math.sqrt((index + 0.5) / total);
-      var theta = index * GOLDEN_ANGLE;
-      var yFrac = Math.sin(index * 127.1 + 311.7);   // deterministic, -1..1
-      return new THREE.Vector3(
-        Math.cos(theta) * r,
-        yFrac * CLUSTER.ySpread,
-        Math.sin(theta) * r
-      );
+      var center = CLUSTER_CENTERS[index % CLUSTER_CENTERS.length];
+      var jx = Math.sin(index * 127.1 + 1.3) * CLUSTER_JITTER;
+      var jz = Math.cos(index * 311.7 + 2.7) * CLUSTER_JITTER;
+      var jy = Math.sin(index *  43.3 + 0.9) * CLUSTER_Y_SPREAD;
+      return new THREE.Vector3(center.x + jx, jy, center.z + jz);
     }
 
     // ─── Card factory — PlaneGeometry with DoubleSide ───────────────────────
@@ -311,26 +421,17 @@
       mesh.rotation.y = (Math.sin(index * 347.7 + 2.1) * 0.5 + 0.5) * Math.PI * 2;
 
       mesh.userData = {
-        photoSrc:    photo.src,
-        title:       photo.title || '',
-        spinSpeed:   CARD.spinSpeedBase + Math.abs(Math.sin(index * 0.7)) * CARD.spinSpeedVariance,
-        bobSpeed:    CARD.bobSpeedBase  + Math.abs(Math.sin(index * 1.3)) * CARD.bobSpeedVariance,
-        bobAmp:      CARD.bobAmplitude,
-        baseY:       position.y,
-        phaseOffset: index * 1.7
+        photoSrc:        photo.src,
+        title:           photo.title || '',
+        spinSpeed:       CARD.spinSpeedBase + Math.abs(Math.sin(index * 0.7)) * CARD.spinSpeedVariance,
+        bobSpeed:        CARD.bobSpeedBase  + Math.abs(Math.sin(index * 1.3)) * CARD.bobSpeedVariance,
+        bobAmp:          CARD.bobAmplitude,
+        baseY:           position.y,
+        phaseOffset:     index * 1.7,
+        textureLoaded:   false,   // lazy load — texture fetched only when camera is nearby
+        loadingStarted:  false
       };
-
-      var loader = new THREE.TextureLoader();
-      loader.load(
-        photo.src,
-        function (texture) {
-          mesh.material = new THREE.MeshBasicMaterial({
-            map: texture, side: THREE.DoubleSide, transparent: true
-          });
-        },
-        undefined,
-        function () { /* keep placeholder material on error */ }
-      );
+      // No eager TextureLoader here — loaded lazily in the animate loop
       return mesh;
     }
 
@@ -605,13 +706,35 @@
       // BH galaxy slow auto-rotation
       bhGalaxy.rotation.y = elapsed * 0.025;
 
-      // Card spin (dt-incremental) + bob (sin of elapsed for smooth continuity)
+      // Card spin + bob + lazy texture load when camera is close enough
       for (var ci = 0; ci < cardMeshes.length; ci++) {
         var c  = cardMeshes[ci];
         var ud = c.userData;
         c.rotation.y += dt * ud.spinSpeed;
         c.position.y  = ud.baseY +
           Math.sin(elapsed * ud.bobSpeed + ud.phaseOffset) * ud.bobAmp;
+
+        // Lazy load: trigger only when camera is within LAZY_LOAD_DIST_SQ of card
+        if (!ud.textureLoaded && !ud.loadingStarted) {
+          if (camera.position.distanceToSquared(c.position) < BH.LAZY_LOAD_DIST_SQ) {
+            ud.loadingStarted = true;
+            (function (mesh) {
+              var ldr = new THREE.TextureLoader();
+              ldr.load(
+                mesh.userData.photoSrc,
+                function (tex) {
+                  tex.minFilter = THREE.LinearFilter;
+                  mesh.material = new THREE.MeshBasicMaterial({
+                    map: tex, side: THREE.DoubleSide, transparent: true
+                  });
+                  mesh.userData.textureLoaded = true;
+                },
+                undefined,
+                function () { /* keep dark placeholder on error */ }
+              );
+            })(c);
+          }
+        }
       }
 
       renderer.render(scene, camera);
