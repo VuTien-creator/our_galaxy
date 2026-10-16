@@ -27,7 +27,8 @@ log_err()  { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # --- Config ---
 TARGET_DIR="${1:-.}"
-WEBP_QUALITY=80
+WEBP_QUALITY=65       # 65 đủ đẹp cho web, file nhỏ hơn quality 80 ~30-40%
+MAX_WIDTH=800         # resize về max 800px cạnh dài (chỉ thu nhỏ, không phóng to)
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SUCCESS_LOG="${SCRIPT_DIR}/converted_success_${TIMESTAMP}.log"
@@ -62,7 +63,7 @@ fi
 echo "============================================================"
 echo " Convert to WebP"
 echo " Thư mục     : $TARGET_DIR"
-echo " Quality     : $WEBP_QUALITY"
+echo " Quality     : $WEBP_QUALITY  |  Max width: ${MAX_WIDTH}px"
 echo " Success log : $SUCCESS_LOG"
 echo " Error log   : $ERROR_LOG"
 echo "============================================================"
@@ -88,7 +89,7 @@ while IFS= read -r -d '' file; do
       ;;
 
     jpg|jpeg|png|tiff|tif)
-      if cwebp -q "$WEBP_QUALITY" "$file" -o "$output" 2>> "$ERROR_LOG"; then
+      if cwebp -q "$WEBP_QUALITY" -resize "$MAX_WIDTH" 0 "$file" -o "$output" 2>> "$ERROR_LOG"; then
         log_ok "$filename → $(basename "$output")"
         echo "$file" >> "$SUCCESS_LOG"
         COUNT_SUCCESS=$((COUNT_SUCCESS + 1))
