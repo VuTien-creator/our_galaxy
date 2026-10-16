@@ -9,61 +9,53 @@
  *   </script>
  *
  * Behaviour:
- *   - Shuffles the array randomly on first play.
- *   - Plays through every song in the shuffled order.
- *   - Re-shuffles and loops when the playlist is exhausted.
- *   - Audio object is only created when playback actually starts (lazy).
+ *   - On first play: picks a completely random song from the array.
+ *   - When a song ends: picks another random song (never immediately repeating
+ *     the same one when the playlist has more than one track).
+ *   - Audio object is created once and reused — avoids CORS issues that arise
+ *     when creating new Audio() from async (non-gesture) events.
  *   - Auto-starts on the first user interaction (click or touchend).
  *   - Returns a controller object with start / stop / setVolume.
  */
 function createMusicPlayer(files) {
   if (!files || files.length === 0) return null;
 
-  var shuffled     = [];
-  var currentIndex = 0;
+  var currentIndex = -1;   // -1 = nothing played yet
   var started      = false;
 
-  // Single Audio element reused across all songs — avoids CORS issues
-  // that arise when creating new Audio() from async (non-gesture) events.
+  // Single Audio element reused across all songs
   var audio = new Audio();
   audio.volume = 0.45;
 
-  function shuffle(arr) {
-    var copy = arr.slice();
-    for (var i = copy.length - 1; i > 0; i--) {
-      var j   = Math.floor(Math.random() * (i + 1));
-      var tmp = copy[i];
-      copy[i] = copy[j];
-      copy[j] = tmp;
-    }
-    return copy;
+  // Pick a random track from `files`, avoiding immediate repetition when
+  // possible (i.e. when there is more than one track to choose from).
+  function _pickRandom() {
+    if (files.length === 1) return 0;
+    var next;
+    do {
+      next = Math.floor(Math.random() * files.length);
+    } while (next === currentIndex);
+    return next;
   }
 
-  function playNext() {
-    if (shuffled.length === 0) return;
-    if (currentIndex >= shuffled.length) {
-      shuffled     = shuffle(files);
-      currentIndex = 0;
-    }
-    var src = shuffled[currentIndex++];
-    audio.src = src;   // swap src on the existing element — no new Audio() needed
-    audio.load();      // reset the element to load the new source
+  function playRandom() {
+    if (files.length === 0) return;
+    currentIndex = _pickRandom();
+    audio.src    = files[currentIndex];
+    audio.load();                          // reset element to new source
     audio.play().catch(function () {});
   }
 
-  // Wire events once on the single audio element
-  audio.onerror = function () {
-    // Skip broken/missing file and try the next one
-    if (currentIndex < shuffled.length) { playNext(); }
-  };
-  audio.onended = function () { playNext(); };
+  // Skip broken / missing files silently
+  audio.onerror = function () { playRandom(); };
+
+  // Auto-advance to a new random song when the current one finishes
+  audio.onended = function () { playRandom(); };
 
   function start() {
     if (started) return;
-    started  = true;
-    shuffled = shuffle(files);
-    currentIndex = 0;
-    playNext();
+    started = true;
+    playRandom();
   }
 
   document.addEventListener('click',    function () { start(); }, { once: true });
@@ -71,7 +63,7 @@ function createMusicPlayer(files) {
 
   return {
     start:     start,
-    stop:      function () { audio.pause(); },
+    stop:      function ()  { audio.pause(); },
     setVolume: function (v) { audio.volume = Math.max(0, Math.min(1, v)); }
   };
 }
